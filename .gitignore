@@ -146,3 +146,4 @@ vite.config.ts.timestamp-*
 # cc_dev_team workflow
 tmp/
 .claude/settings.local.json
+.claude/agent-memory/
