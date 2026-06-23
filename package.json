@@ -1,0 +1,46 @@
+{
+  "name": "simple-translator",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:web\" \"npm run dev:ws\"",
+    "dev:web": "next dev",
+    "dev:ws": "tsx --watch server/index.ts",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:server": "tsc --noEmit -p tsconfig.server.json",
+    "test": "jest",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "next": "^15.3.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "ws": "^8.18.2",
+    "zod": "^3.25.67",
+    "@google-cloud/speech": "^6.7.0",
+    "@google-cloud/translate": "^8.5.0",
+    "@google-cloud/text-to-speech": "^5.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "@types/node": "^22.15.29",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5",
+    "@types/ws": "^8.5.14",
+    "tsx": "^4.19.4",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.28.0",
+    "eslint-config-next": "^15.3.4",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.14",
+    "ts-jest": "^29.3.4",
+    "jest-environment-jsdom": "^29.7.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/user-event": "^14.5.2",
+    "@playwright/test": "^1.52.0"
+  }
+}
