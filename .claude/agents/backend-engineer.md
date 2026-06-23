@@ -3,7 +3,6 @@ name: backend-engineer
 description: バックエンド実装の専門エージェント。本プロジェクトでは主にローカル Node.js WebSocket サーバー（ws）と GCP 連携（Cloud Speech-to-Text Streaming / Translation / Text-to-Speech）、発話区切り判定ロジックを実装する。必要に応じて Next.js の Route Handlers も担当。CLAUDE.mdの技術スタックに従う。
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
-isolation: worktree
 maxTurns: 50
 permissionMode: acceptEdits
 color: blue

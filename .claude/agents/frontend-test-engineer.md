@@ -3,7 +3,6 @@ name: frontend-test-engineer
 description: フロントエンドテストの専門エージェント。React/Next.jsコンポーネントの単体テスト、結合テスト、E2Eテストを設計・実装・実行する。Jest + React Testing Library + Playwright を使用する。
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
-isolation: worktree
 maxTurns: 40
 permissionMode: acceptEdits
 color: green

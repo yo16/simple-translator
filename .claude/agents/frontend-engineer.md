@@ -3,7 +3,6 @@ name: frontend-engineer
 description: フロントエンド実装の専門エージェント。Next.js (App Router) ベースのコンポーネント、ページ、クライアントサイドロジック（マイク入力・音声チャンク生成・WebSocketクライアント・認識/翻訳結果の表示・合成音声の再生）を実装する。Beadsタスクの要件に基づいてフロントエンドコードを書く。
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
-isolation: worktree
 maxTurns: 50
 permissionMode: acceptEdits
 color: green

@@ -3,7 +3,6 @@ name: backend-test-engineer
 description: バックエンドテストの専門エージェント。ローカルNode.js WebSocketサーバー、発話区切り判定、GCP連携ラッパー、メッセージバリデーションの単体テスト・結合テストを設計・実装・実行する。GCPクライアントはモックする。Jestを使用する。
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
-isolation: worktree
 maxTurns: 40
 permissionMode: acceptEdits
 color: blue
