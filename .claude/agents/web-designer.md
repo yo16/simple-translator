@@ -3,7 +3,6 @@ name: web-designer
 description: WEBデザイン（CSSスタイリング）の専門エージェント。CSS Modulesを使ったスタイリング、レスポンシブ対応、アニメーション、ビジュアルデザインを実装する。「デザイン」とは設計ではなく、CSS等の装飾を指す。
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
-isolation: worktree
 maxTurns: 40
 permissionMode: acceptEdits
 color: green
