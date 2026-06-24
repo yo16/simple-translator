@@ -4,11 +4,40 @@
  * Session クラスを最小スタブの WebSocket モックで生成し、
  * utterance_committed メッセージが ws.send 経由で送信されることを検証する。
  * GCP通信は行わない。UtteranceBufferManager は実装のまま使用する。
+ *
+ * タスク .8 対応:
+ *   onUtteranceCommitted が translate/synthesize を呼ぶようになったため、
+ *   GCP 実通信を遮断するために translate / textToSpeech をモックする。
+ *   既存テストの検証意図（utterance_committed の送信確認）は変えない。
  */
 
 import { Session } from "../../server/session";
 import { ClientMessage } from "../../server/schema";
 import WebSocket from "ws";
+
+// ---------------------------------------------------------------------------
+// GCP 実通信遮断: translate / textToSpeech をモック化する
+// ---------------------------------------------------------------------------
+jest.mock("../../server/translate");
+jest.mock("../../server/textToSpeech");
+
+import { translate } from "../../server/translate";
+import { isTtsEnabled, synthesize } from "../../server/textToSpeech";
+
+const mockTranslate = translate as jest.MockedFunction<typeof translate>;
+const mockIsTtsEnabled = isTtsEnabled as jest.MockedFunction<typeof isTtsEnabled>;
+const mockSynthesize = synthesize as jest.MockedFunction<typeof synthesize>;
+
+// デフォルト: 翻訳は適当な訳文を返す、TTS は無効にする（テストの本質に影響しない）
+beforeEach(() => {
+  mockTranslate.mockResolvedValue("translated");
+  mockIsTtsEnabled.mockReturnValue(false);
+  mockSynthesize.mockResolvedValue(null);
+});
+
+afterEach(() => {
+  jest.clearAllMocks();
+});
 
 // ---------------------------------------------------------------------------
 // ヘルパー: 最小 WebSocket スタブ
@@ -82,6 +111,11 @@ describe("utterance_committed — ws.send 経由での送信確認", () => {
     expect(committed).toHaveLength(1);
     expect(committed[0].text).toBe("hello");
     expect(committed[0].reason).toBe("maxChars");
+
+    // タスク .8 対応: 確定後に起動する非同期パイプライン（translate mock）の
+    // Promise を Microtask キューで解決してから afterEach に進む。
+    // フェイクタイマー環境でも jest.runAllTicks() は Microtask を同期 flush する。
+    jest.runAllTicks();
   });
 
   test("start 後に addFinalToBuffer を複数回呼び合計が maxChars を超えると utterance_committed が送信される", () => {
@@ -98,6 +132,9 @@ describe("utterance_committed — ws.send 経由での送信確認", () => {
     expect(committed).toHaveLength(1);
     expect(committed[0].text).toBe("helloworld!");
     expect(committed[0].reason).toBe("maxChars");
+
+    // タスク .8 対応: 非同期パイプラインの Promise を flush
+    jest.runAllTicks();
   });
 
   test("silence タイマー経過後に utterance_committed が送信され reason が 'silence' になる", () => {
@@ -114,6 +151,9 @@ describe("utterance_committed — ws.send 経由での送信確認", () => {
     expect(committed).toHaveLength(1);
     expect(committed[0].text).toBe("speech text");
     expect(committed[0].reason).toBe("silence");
+
+    // タスク .8 対応: silence タイマー発火後に起動する非同期パイプラインの Promise を flush
+    jest.runAllTicks();
   });
 
   test("handleMessage({type:'commit'}) で utterance_committed が送信され reason が 'commit' になる", () => {
@@ -130,6 +170,9 @@ describe("utterance_committed — ws.send 経由での送信確認", () => {
     expect(committed).toHaveLength(1);
     expect(committed[0].text).toBe("commit text");
     expect(committed[0].reason).toBe("commit");
+
+    // タスク .8 対応: 非同期パイプラインの Promise を flush
+    jest.runAllTicks();
   });
 
   test("handleMessage({type:'stop'}) で utterance_committed が送信され reason が 'stop' になる", () => {
@@ -146,6 +189,9 @@ describe("utterance_committed — ws.send 経由での送信確認", () => {
     expect(committed).toHaveLength(1);
     expect(committed[0].text).toBe("stop text");
     expect(committed[0].reason).toBe("stop");
+
+    // タスク .8 対応: 非同期パイプラインの Promise を flush
+    jest.runAllTicks();
   });
 
   test("utterance_committed メッセージの text と reason が正しい値で送信される", () => {
@@ -164,6 +210,9 @@ describe("utterance_committed — ws.send 経由での送信確認", () => {
     expect(typeof committed[0].text).toBe("string");
     expect(typeof committed[0].reason).toBe("string");
     expect((committed[0].text as string).length).toBeGreaterThan(0);
+
+    // タスク .8 対応: 非同期パイプラインの Promise を flush
+    jest.runAllTicks();
   });
 });
 
@@ -216,6 +265,9 @@ describe("空バッファ時のコミット — utterance_committed が送信さ
     session.handleMessage(makeStartMsg());
     session.addFinalToBuffer("text");
     session.handleMessage({ type: "commit" }); // 1回目の確定
+
+    // タスク .8 対応: 1回目の確定で起動した非同期パイプラインの Promise を flush
+    jest.runAllTicks();
 
     // Act: バッファ空の状態で再 commit
     session.handleMessage({ type: "commit" });
@@ -280,6 +332,9 @@ describe("handleMessage({type:'audio'}) — 無音タイマーのリセット", 
     const committed = messages.filter((m) => m.type === "utterance_committed");
     expect(committed).toHaveLength(1);
     expect(committed[0].reason).toBe("silence");
+
+    // タスク .8 対応: silence タイマー発火後に起動する非同期パイプラインの Promise を flush
+    jest.runAllTicks();
   });
 });
 
@@ -441,6 +496,9 @@ describe("複数の確定 — バッファリセット後の再利用", () => {
     expect(committed[0].reason).toBe("commit");
     expect(committed[1].text).toBe("second utterance");
     expect(committed[1].reason).toBe("commit");
+
+    // タスク .8 対応: 2回分の非同期パイプラインの Promise を flush
+    jest.runAllTicks();
   });
 
   test("silence で確定後に再度 addFinalToBuffer して silence で確定できる", () => {
@@ -461,6 +519,9 @@ describe("複数の確定 — バッファリセット後の再利用", () => {
     expect(committed).toHaveLength(2);
     expect(committed[0].text).toBe("first");
     expect(committed[1].text).toBe("second");
+
+    // タスク .8 対応: 2回分の silence タイマー発火後に起動した非同期パイプラインの Promise を flush
+    jest.runAllTicks();
   });
 });
 
