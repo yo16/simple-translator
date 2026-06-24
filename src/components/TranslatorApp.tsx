@@ -6,12 +6,12 @@
  * アプリケーション最上位の Client Component。
  * useReducer で全体状態を管理し、useWebSocket / useRecorder / useAudioQueue を統合する。
  *
- * このコンポーネントは統合と最小限のプレースホルダ UI に留める。
- * polished な UI は後続タスク（.12 UI / .13 スタイリング）で実装する。
- *
- * プレースホルダ UI の方針:
- * - インライン style の多用は避け、className のみで構造を示す（.13 が CSS Modules を当てる前提）
- * - 色・レイアウトの作り込みは行わない
+ * このコンポーネントは統合ロジックを保持し、UI は子コンポーネントへ委譲する:
+ *   - LanguageSelector: 入出力言語の選択
+ *   - Recorder: 録音開始/停止/手動区切りボタン群と状態表示
+ *   - TranscriptView: interim / 確定発話 / 翻訳結果の表示
+ *   - MetricsDisplay: レイテンシ表示
+ *   - SettingsPanel: 発話区切り・TTS 設定
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
@@ -19,7 +19,13 @@ import { appReducer, initialState, AppActions } from "../lib/appReducer";
 import { useWebSocketWithAudio } from "../hooks/useWebSocket";
 import { useRecorder } from "../hooks/useRecorder";
 import { useAudioQueue } from "../hooks/useAudioQueue";
-import type { AppAction, Settings, SupportedLanguage } from "../lib/types";
+import type { AppAction, Settings } from "../lib/types";
+import { Recorder } from "./Recorder";
+import { LanguageSelector } from "./LanguageSelector";
+import { TranscriptView } from "./TranscriptView";
+import { MetricsDisplay } from "./MetricsDisplay";
+import { SettingsPanel } from "./SettingsPanel";
+import styles from "./TranslatorApp.module.css";
 
 // ============================================================
 // 定数
@@ -215,230 +221,35 @@ export function TranslatorApp() {
   }, []);
 
   // ----------------------------------------------------------
-  // UI ヘルパー
-  // ----------------------------------------------------------
-
-  const { status } = state;
-
-  const isConnecting = status === "connecting" || status === "connected";
-  const isRecording = status === "recording";
-  const isDisabled = isConnecting || isRecording;
-
-  const languageLabel = (lang: SupportedLanguage): string =>
-    lang === "ja-JP" ? "日本語" : "英語";
-
-  // ----------------------------------------------------------
   // レンダリング
   // ----------------------------------------------------------
 
   return (
-    <div className="translator-app">
-      {/* ステータス表示 */}
-      <div className="translator-app__status">
-        <span>状態: {status}</span>
-        {state.error && (
-          <span className="translator-app__error">
-            {" | "}エラー: {state.error}
-          </span>
-        )}
-      </div>
+    <div className={styles.translatorApp}>
+      <LanguageSelector
+        sourceLanguage={settings.sourceLanguage}
+        targetLanguage={settings.targetLanguage}
+        status={state.status}
+        onToggle={handleLanguagePairToggle}
+      />
 
-      {/* 言語ペア表示 */}
-      <div className="translator-app__language">
-        <span>{languageLabel(settings.sourceLanguage)}</span>
-        <button
-          type="button"
-          onClick={handleLanguagePairToggle}
-          disabled={isDisabled}
-          className="translator-app__lang-toggle"
-          aria-label="言語を入れ替える"
-        >
-          ⇄
-        </button>
-        <span>{languageLabel(settings.targetLanguage)}</span>
-      </div>
+      <Recorder
+        status={state.status}
+        error={state.error}
+        onStart={handleStart}
+        onStop={handleStop}
+        onCommit={handleCommit}
+      />
 
-      {/* 操作ボタン */}
-      <div className="translator-app__controls">
-        {isRecording ? (
-          <button
-            type="button"
-            onClick={handleStop}
-            className="translator-app__btn translator-app__btn--stop"
-          >
-            停止
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={handleStart}
-            disabled={isConnecting}
-            className="translator-app__btn translator-app__btn--start"
-          >
-            {isConnecting ? "接続中..." : "開始"}
-          </button>
-        )}
+      <TranscriptView transcript={state.transcript} />
 
-        <button
-          type="button"
-          onClick={handleCommit}
-          disabled={!isRecording}
-          className="translator-app__btn"
-          aria-label="手動で発話を区切る"
-        >
-          手動区切り
-        </button>
-      </div>
+      <MetricsDisplay metrics={state.metrics} />
 
-      {/* テキスト表示 */}
-      <div className="translator-app__transcript">
-        {/* 認識途中 */}
-        <section className="translator-app__section" aria-label="認識中テキスト">
-          <h2 className="translator-app__section-title">認識中</h2>
-          <p className="translator-app__interim">
-            {state.transcript.interim || "（待機中）"}
-          </p>
-        </section>
-
-        {/* 認識確定の履歴 */}
-        <section className="translator-app__section" aria-label="認識確定テキスト">
-          <h2 className="translator-app__section-title">認識確定</h2>
-          {state.transcript.finals.length === 0 ? (
-            <p>（なし）</p>
-          ) : (
-            <ul className="translator-app__list">
-              {state.transcript.finals.map((text, i) => (
-                <li key={i} className="translator-app__list-item">
-                  {text}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {/* 翻訳結果の履歴 */}
-        <section className="translator-app__section" aria-label="翻訳テキスト">
-          <h2 className="translator-app__section-title">翻訳</h2>
-          {state.transcript.translations.length === 0 ? (
-            <p>（なし）</p>
-          ) : (
-            <ul className="translator-app__list">
-              {state.transcript.translations.map((t, i) => (
-                <li key={i} className="translator-app__list-item">
-                  <span className="translator-app__source">{t.sourceText}</span>
-                  <span className="translator-app__arrow"> → </span>
-                  <span className="translator-app__translated">
-                    {t.translatedText}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      {/* レイテンシ表示 */}
-      {state.metrics && (
-        <div className="translator-app__metrics" aria-label="レイテンシ情報">
-          <strong>レイテンシ: </strong>
-          <span>音声認識 {state.metrics.speechMs}ms</span>
-          {" | "}
-          <span>翻訳 {state.metrics.translationMs}ms</span>
-          {" | "}
-          <span>音声合成 {state.metrics.ttsMs}ms</span>
-          {" | "}
-          <span>合計 {state.metrics.totalMs}ms</span>
-        </div>
-      )}
-
-      {/* 設定パネル（最小限） */}
-      <details className="translator-app__settings">
-        <summary>設定</summary>
-        <div className="translator-app__settings-body">
-          <label className="translator-app__setting-row">
-            <span>TTS（音声再生）</span>
-            <input
-              type="checkbox"
-              checked={settings.enableTts}
-              onChange={(e) =>
-                handleSettingsChange("enableTts", e.target.checked)
-              }
-              disabled={isDisabled}
-            />
-          </label>
-
-          <label className="translator-app__setting-row">
-            <span>interim 翻訳</span>
-            <input
-              type="checkbox"
-              checked={settings.enableInterimTranslation}
-              onChange={(e) =>
-                handleSettingsChange(
-                  "enableInterimTranslation",
-                  e.target.checked,
-                )
-              }
-              disabled={isDisabled}
-            />
-          </label>
-
-          <label className="translator-app__setting-row">
-            <span>チャンク間隔(ms)</span>
-            <input
-              type="number"
-              value={settings.chunkMs}
-              onChange={(e) =>
-                handleSettingsChange("chunkMs", Number(e.target.value))
-              }
-              disabled={isDisabled}
-              min={50}
-              max={5000}
-            />
-          </label>
-
-          <label className="translator-app__setting-row">
-            <span>無音判定(ms)</span>
-            <input
-              type="number"
-              value={settings.silenceMs}
-              onChange={(e) =>
-                handleSettingsChange("silenceMs", Number(e.target.value))
-              }
-              disabled={isDisabled}
-              min={100}
-              max={10000}
-            />
-          </label>
-
-          <label className="translator-app__setting-row">
-            <span>最大文字数</span>
-            <input
-              type="number"
-              value={settings.maxChars}
-              onChange={(e) =>
-                handleSettingsChange("maxChars", Number(e.target.value))
-              }
-              disabled={isDisabled}
-              min={10}
-              max={500}
-            />
-          </label>
-
-          <label className="translator-app__setting-row">
-            <span>最大秒数</span>
-            <input
-              type="number"
-              value={settings.maxSeconds}
-              onChange={(e) =>
-                handleSettingsChange("maxSeconds", Number(e.target.value))
-              }
-              disabled={isDisabled}
-              min={1}
-              max={60}
-            />
-          </label>
-        </div>
-      </details>
+      <SettingsPanel
+        settings={settings}
+        status={state.status}
+        onSettingsChange={handleSettingsChange}
+      />
     </div>
   );
 }

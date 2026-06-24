@@ -1,0 +1,31 @@
+.settingsPanel {
+}
+
+.summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.label {
+}
+
+.checkbox {
+  cursor: pointer;
+}
+
+.numberInput {
+  width: 6rem;
+}

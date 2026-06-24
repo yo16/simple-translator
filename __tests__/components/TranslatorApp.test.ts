@@ -20,6 +20,17 @@ import { render, screen, act, fireEvent, within } from "@testing-library/react";
 import type { WebSocketCallbacks } from "../../src/lib/websocketClient";
 
 // ============================================================
+// CSS Modules モック（ts-jest は CSS を解釈できないため空オブジェクトで代替）
+// ============================================================
+
+jest.mock("../../src/components/TranslatorApp.module.css", () => ({}));
+jest.mock("../../src/components/Recorder.module.css", () => ({}));
+jest.mock("../../src/components/LanguageSelector.module.css", () => ({}));
+jest.mock("../../src/components/TranscriptView.module.css", () => ({}));
+jest.mock("../../src/components/SettingsPanel.module.css", () => ({}));
+jest.mock("../../src/components/MetricsDisplay.module.css", () => ({}));
+
+// ============================================================
 // jest.mock — websocketClient
 // ============================================================
 
