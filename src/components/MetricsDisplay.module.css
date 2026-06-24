@@ -1,0 +1,16 @@
+.metricsDisplay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  font-size: 0.875rem;
+}
+
+.heading {
+}
+
+.item {
+}
+
+.separator {
+}

@@ -1,0 +1,19 @@
+.languageSelector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.language {
+  font-weight: bold;
+}
+
+.toggleBtn {
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+.toggleBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
