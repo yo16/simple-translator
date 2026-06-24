@@ -126,11 +126,6 @@ export class Session {
       this.state.timing.speechStartedAt = process.hrtime.bigint();
     }
 
-    // 無音タイマーリセット（audio 受信通知）
-    if (this.utteranceBuffer !== null) {
-      this.utteranceBuffer.notifyAudio();
-    }
-
     // STT ストリームへの書き込み接続点（.4 で実装）
     this.onAudioChunk(base64Data);
   }
@@ -182,10 +177,10 @@ export class Session {
    * STT ストリームが未生成なら生成し、base64 → Buffer 変換後に write する。
    *
    * - ストリームはセッション中切り直さない（WebM/Opus コンテナヘッダは最初のチャンクのみ）。
-   * - interim コールバック → transcript_interim 送信（表示のみ）
-   * - final コールバック → transcript_final 送信 + addFinalToBuffer（発話バッファ蓄積）
+   * - interim コールバック → transcript_interim 送信（表示のみ）+ notifyInterim() で無音タイマーリセット
+   * - final コールバック → transcript_final 送信 + addFinalToBuffer（発話バッファ蓄積、addFinal が無音タイマーをリセットする）
    * - error コールバック → sendError(message, false)（接続維持）
-   * - 無音タイマーリセットは handleAudio が notifyAudio() で既に行うため、ここでは行わない。
+   * - 生の音声チャンクは無音タイマーをリセットしない（STT 結果活動でのみリセットする）
    */
   protected onAudioChunk(base64Data: string): void {
     if (!this.state.initialized || !this.state.config) {
@@ -202,6 +197,8 @@ export class Session {
         onInterim: (text: string) => {
           // 表示専用: transcript_interim を送信（翻訳・TTS は行わない）
           this.send({ type: "transcript_interim", text });
+          // interim 受信で無音タイマーをリセットする（バッファ非空時のみ有効）
+          this.utteranceBuffer?.notifyInterim();
         },
         onFinal: (text: string) => {
           // transcript_final を送信し、発話バッファへ蓄積する

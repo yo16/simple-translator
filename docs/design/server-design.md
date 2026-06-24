@@ -75,9 +75,9 @@ tsx --watch server/index.ts
 [recv start]
   → パラメータ確定 / STTストリーム開始 / 発話バッファ初期化
 [recv audio]*
-  → base64 デコード → STTストリームへ write
-  → STT interim → transcript_interim 送信（表示のみ）
-  → STT final   → 発話バッファへ追加 → transcript_final 送信 → 区切り判定
+  → base64 デコード → STTストリームへ write（※生の音声チャンクでは無音タイマーをリセットしない）
+  → STT interim → transcript_interim 送信（表示のみ）→ utteranceBuffer.notifyInterim() で無音タイマーをリセット
+  → STT final   → 発話バッファへ追加（addFinal が無音タイマーをリセット）→ transcript_final 送信 → 区切り判定
 [recv commit]
   → 発話バッファを即時確定
 [recv stop]
@@ -107,8 +107,11 @@ interface SessionState {
 - 受信した `audio.data`（base64 / WebM Opus）をデコードし、**維持している単一のSTTストリーム**へ書き込む。
 - **STTストリームはセッション中切り直さない**。WebM/Opus のコンテナヘッダは最初のチャンクのみに含まれるため、ストリームを切ると後続チャンクがデコード不能になる（[gcp-integration.md](./gcp-integration.md#stt-ストリーム維持) 参照）。
 - STT のレスポンスを `isFinal` で分岐する。
-  - interim → `transcript_interim` を即時送信（要件 §15.2）。発話バッファには入れない。
-  - final → 発話バッファへ追加し、`transcript_final` を送信。直後に区切り判定を行う。
+  - interim → `transcript_interim` を即時送信（要件 §15.2）。発話バッファには入れない。**`utteranceBuffer.notifyInterim()` を呼び、無音タイマーをリセットする**（話している間は確定させないため）。
+  - final → 発話バッファへ追加（`addFinal` が無音タイマーをリセットする）し、`transcript_final` を送信。直後に区切り判定を行う。
+
+> **無音は「STT結果（interim/final）が止まったこと」で検出する。生の音声チャンク受信では無音タイマーをリセットしない**（`bd-simple-translator-cbv` で修正）。
+> 理由: `MediaRecorder` は `timeslice`（既定250ms）ごとに**無音でも音声チャンクを送り続ける**ため、音声チャンクでリセットすると無音タイマーが永久にリセットされ発火しない。「ユーザーが話しているか」を判定しているのは Google STT のエンドポイント検出であり、無音時は STT が interim/final を出さなくなる。よって無音の検出は STT 結果の停止で行うのが正しい（[外部依存の前提](#外部依存の前提) 参照）。
 
 ### STTストリームの時間制限への対処
 
@@ -129,7 +132,7 @@ Speech-to-Text Streaming には1ストリームあたりの時間上限がある
 
 | 条件 | 初期値 | 判定方法 | `reason` |
 |---|---|---|---|
-| 無音継続 | `silenceMs` = 1000 | 最後に final/audio を受けてからの経過時間がしきい値超過 | `silence` |
+| 無音継続 | `silenceMs` = 1000 | 最後の **STT結果（interim/final）** を受けてからの経過時間がしきい値超過。**生の音声チャンク受信ではリセットしない**（`bd-simple-translator-cbv` で修正） | `silence` |
 | 文字数上限 | `maxChars` = 80 | バッファの確定テキスト長がしきい値超過 | `maxChars` |
 | 発話秒数上限 | `maxSeconds` = 10 | 発話開始からの経過時間がしきい値超過 | `maxSeconds` |
 | 手動 commit | - | `commit` メッセージ受信 | `commit` |
@@ -137,11 +140,14 @@ Speech-to-Text Streaming には1ストリームあたりの時間上限がある
 
 ### タイマー設計
 
-- **無音タイマー**: final 受信・audio 受信のたびにリセットする `silenceMs` のタイマー。発火時に非空バッファを確定。
+- **無音タイマー**: **STT結果（interim/final）を受けたとき**にリセットする `silenceMs` のタイマー。発火時に非空バッファを確定。リセット契機は次の2つに限る（`bd-simple-translator-cbv` で修正）:
+  - interim 受信時: `utteranceBuffer.notifyInterim()`（旧 `notifyAudio()` をリネーム）でリセット。話している間は確定させない。
+  - final 受信時: `addFinal` がリセット。
+  - **生の音声チャンク（audio 受信）ではリセットしない**。MediaRecorder は無音でもチャンクを送出するため、音声でリセットすると無音タイマーが永久に発火しない（[音声認識](#音声認識要件-152) 節および [外部依存の前提](#外部依存の前提) 参照）。
 - **最大発話タイマー**: 発話開始（バッファが空→非空になった時点）で `maxSeconds` のタイマーを開始。確定時にクリア。
 - **文字数**: final 追加のたびに同期的にチェック。
 
-> interim result はタイマーや文字数判定に使わない（後から変化し得るため、要件 §13.4）。判定対象は final と各タイマーのみ。
+> interim result はタイマーや文字数判定に使わない（後から変化し得るため、要件 §13.4）。判定対象は final と各タイマーのみ。ただし**無音タイマーのリセット契機としては interim も使う**（STT結果が出ている間＝発話中とみなす）。
 
 ### 確定後の処理シーケンス
 
@@ -187,10 +193,10 @@ Speech-to-Text Streaming には1ストリームあたりの時間上限がある
 
 | 計測区間 | 計算 |
 |---|---|
-| `speechMs` | 発話開始（最初の audio/interim）〜 発話区切り確定 |
+| `speechMs` | 発話開始（最初の audio チャンク受信）〜 発話区切り確定 |
 | `translationMs` | Translation 呼び出し前 〜 結果受信 |
 | `ttsMs` | TTS 呼び出し前 〜 結果受信 |
-| `totalMs` | 発話開始 〜 TTS完了（TTS無効時は翻訳完了まで） |
+| `totalMs` | 発話開始（最初の audio チャンク受信）〜 TTS完了（TTS無効時は翻訳完了まで） |
 
 クライアント側で「再生開始時刻」を別途記録し、画面に合計待ち時間を表示する（[frontend-design.md](./frontend-design.md#レイテンシ表示) 参照）。
 
@@ -213,13 +219,24 @@ Speech-to-Text Streaming には1ストリームあたりの時間上限がある
 
 ---
 
+## 外部依存の前提
+
+発話区切り（特に無音タイマー）の設計は、以下の外部コンポーネントの挙動を前提とする（`bd-simple-translator-cbv` で明文化）。
+
+- **MediaRecorder は無音でもチャンクを送出する**: クライアントの `MediaRecorder` は `timeslice`（既定250ms）ごとに音声データを emit する。ユーザーが無言でもマイク入力（環境音・無音）がチャンクとして送られ続ける。したがって「音声チャンクが届いたこと」は「ユーザーが話していること」を意味しない。
+- **STT が自前でエンドポイント（発話/無音）検出を行う**: Google Speech-to-Text Streaming は音声を解析し、発話中は interim/final 結果を返し、無音区間では結果を出さなくなる。よって「ユーザーが話しているか／黙ったか」の判定は STT 結果の有無で行うのが正しい。
+
+この前提から、**無音は「生の音声チャンクが止まったこと」ではなく「STT結果（interim/final）が止まったこと」で検出する**。
+
+---
+
 ## テスト方針（概要）
 
 テスト必須ルールに従い、最低限以下を対象にする。詳細はテストエージェントが設計する。
 
 | 対象 | 種別 | 例 |
 |---|---|---|
-| `utteranceBuffer.ts` | 単体（Jest） | 無音/文字数/秒数/commit/stop での確定タイミング |
+| `utteranceBuffer.ts` | 単体（Jest） | 無音/文字数/秒数/commit/stop での確定タイミング。**無音ケースは `notifyInterim()`/`addFinal` でリセットされること、および生の音声チャンク相当ではリセットされず silenceMs 経過で確定することを検証**（`bd-simple-translator-cbv`） |
 | `schema.ts`（zod） | 単体（Jest） | 正常/異常メッセージの受理・拒否、言語ペア同一の拒否 |
 | `session.ts` | 結合（Jest, GCPモック） | start→audio→final→確定→translation→audio の一連フロー |
 | WebSocketサーバー | 結合（Jest + ws クライアント） | 接続・start前エラー・stop時の残バッファ確定 |
