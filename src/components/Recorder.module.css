@@ -1,49 +1,129 @@
+/* ============================================================
+   Recorder: 録音コントロールと状態表示
+   ============================================================ */
+
+/* 録音ドットの点滅アニメーション */
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
 .recorder {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 
+/* ステータス表示行 */
 .status {
-  font-size: 0.875rem;
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
 }
 
+/* エラーテキスト */
 .errorText {
-  color: inherit;
+  color: var(--color-error);
+  font-weight: 600;
 }
 
+/* 録音中インジケーター */
 .recordingIndicator {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
+  gap: var(--space-sm);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--color-recording);
 }
 
+/* 点滅する赤丸 */
 .recordingDot {
   display: inline-block;
-  width: 0.75rem;
-  height: 0.75rem;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background-color: currentColor;
+  background-color: var(--color-recording);
+  animation: blink 1.2s ease-in-out infinite;
+  flex-shrink: 0;
 }
 
+/* ボタン群 */
 .controls {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
 }
 
+/* 共通ボタンスタイル */
 .btn {
-  padding: 0.25rem 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
   cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .btn:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
+/* 開始ボタン: アクセントカラー */
 .btnStart {
+  background-color: var(--color-accent);
+  color: var(--color-accent-text);
+  border-color: var(--color-accent);
 }
 
+.btnStart:hover:not(:disabled) {
+  background-color: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+/* 停止ボタン: 録音中の赤色 */
 .btnStop {
+  background-color: var(--color-recording);
+  color: #ffffff;
+  border-color: var(--color-recording);
+}
+
+.btnStop:hover:not(:disabled) {
+  background-color: #b91c1c;
+  border-color: #b91c1c;
+}
+
+/* 手動区切りボタン: ゴーストスタイル */
+.btn:not(.btnStart):not(.btnStop) {
+  background-color: transparent;
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.btn:not(.btnStart):not(.btnStop):hover:not(:disabled) {
+  background-color: var(--color-bg);
 }

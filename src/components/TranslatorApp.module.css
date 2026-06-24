@@ -1,6 +1,22 @@
+/* ============================================================
+   TranslatorApp: アプリ全体レイアウト
+   ============================================================ */
+
+/* ページ全体のラッパー */
 .translatorApp {
+  max-width: min(720px, 100%);
+  margin: 0 auto;
+  padding: var(--space-lg) var(--space-md);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
+  gap: var(--space-md);
+}
+
+/* ページタイトル（将来的に layout.tsx へ移す場合も想定） */
+.pageTitle {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--color-text);
+  text-align: center;
+  margin-bottom: var(--space-sm);
 }
