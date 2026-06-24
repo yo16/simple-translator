@@ -9,6 +9,8 @@ const config = {
         esModuleInterop: true,
         allowSyntheticDefaultImports: true,
         strict: false,
+        // TranslatorApp.tsx 等の JSX 変換に必要（react-jsx は import React 不要な新形式）
+        jsx: 'react-jsx',
       },
     }],
   },

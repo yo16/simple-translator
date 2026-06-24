@@ -1,12 +1,12 @@
-// This is a Server Component (no "use client").
-// It renders a placeholder until TranslatorApp is implemented in a later task.
-// TODO (task .2): Replace the placeholder below with <TranslatorApp /> once implemented.
+// Server Component: TranslatorApp（Client Component）を描画するだけ。
+// スタイリングは後続タスク（.13）で行う。
+
+import { TranslatorApp } from "../components/TranslatorApp";
 
 export default function Home() {
   return (
     <main>
-      <h1>Simple Translator</h1>
-      <p>音声翻訳アプリ（技術調査用）。後続タスクで TranslatorApp を組み込みます。</p>
+      <TranslatorApp />
     </main>
   );
 }
