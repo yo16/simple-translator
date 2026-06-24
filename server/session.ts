@@ -10,6 +10,8 @@ import {
 import { ClientMessage, StartMessage } from "./schema";
 import { UtteranceBufferManager } from "./utteranceBuffer";
 import { createSpeechStream } from "./speechStream";
+import { translate } from "./translate";
+import { synthesize, isTtsEnabled } from "./textToSpeech";
 
 // ============================================================
 // Session クラス
@@ -229,8 +231,11 @@ export class Session {
 
   /**
    * 発話バッファが確定されたときに UtteranceBufferManager のコールバックから呼ばれる。
-   * utterance_committed を送信し、committedAt を記録する。
-   * Translation / TTS パイプラインは .8 で実装する。
+   * utterance_committed を送信し、Translation → TTS → metrics の非同期パイプラインを起動する。
+   *
+   * このメソッドは同期的に呼ばれる（UtteranceBufferManager のコールバック）ため、
+   * 非同期処理は runPostCommitPipeline に委譲し、未処理 Promise rejection を残さないよう
+   * .catch() で全例外を捕捉して sendError(_, false) に変換する。
    */
   protected onUtteranceCommitted(text: string, reason: UtteranceCommitReason): void {
     if (text.length === 0) {
@@ -239,11 +244,134 @@ export class Session {
 
     this.state.timing.committedAt = process.hrtime.bigint();
 
-    // utterance_committed を送信
+    // utterance_committed を送信（送信順序: utterance_committed → translation → audio → metrics）
     this.send({ type: "utterance_committed", text, reason });
 
-    // .8 で: Translation → TTS → metrics の順に送信する
     console.log(`[Session] Utterance committed: "${text}" (reason: ${reason})`);
+
+    // Translation → TTS → metrics の非同期パイプラインを起動する。
+    // 未処理 Promise rejection を残さないよう .catch() で例外を捕捉する。
+    this.runPostCommitPipeline(text).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Session] Unexpected error in post-commit pipeline:", message);
+      this.sendError("Internal server error during translation/synthesis.", false);
+    });
+  }
+
+  /**
+   * 発話確定後の Translation → TTS → metrics パイプライン。
+   *
+   * 送信順序: translation → (audio) → metrics
+   *
+   * タイミング計測:
+   *   - speechMs: speechStartedAt〜committedAt（音声認識にかかった時間）
+   *   - translationMs: translationStartedAt〜translationEndedAt
+   *   - ttsMs: ttsStartedAt〜ttsEndedAt（TTS無効時は 0）
+   *   - totalMs: speechStartedAt〜TTS完了（TTS無効時は翻訳完了まで）
+   *
+   * GCP 呼び出し失敗時は sendError(message, false) でセッションを継続する。
+   */
+  private async runPostCommitPipeline(text: string): Promise<void> {
+    const config = this.state.config;
+    if (!config) {
+      return;
+    }
+
+    // ----------------------------------------------------------------
+    // Translation
+    // ----------------------------------------------------------------
+    let translatedText: string;
+
+    this.state.timing.translationStartedAt = process.hrtime.bigint();
+
+    try {
+      translatedText = await translate(text, config.sourceLanguage, config.targetLanguage);
+      this.state.timing.translationEndedAt = process.hrtime.bigint();
+    } catch (err) {
+      this.state.timing.translationEndedAt = process.hrtime.bigint();
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Session] Translation failed:", message);
+      this.sendError("Translation failed. Please try again.", false);
+      // 翻訳失敗時は TTS・metrics も送信せずに終了する
+      return;
+    }
+
+    // translation メッセージを送信
+    this.send({
+      type: "translation",
+      sourceText: text,
+      translatedText,
+    });
+
+    // ----------------------------------------------------------------
+    // Text-to-Speech（TTS有効時のみ）
+    // ----------------------------------------------------------------
+    let ttsBase64: string | null = null;
+
+    if (isTtsEnabled() && config.enableTts) {
+      this.state.timing.ttsStartedAt = process.hrtime.bigint();
+
+      try {
+        ttsBase64 = await synthesize(translatedText, config.targetLanguage);
+        this.state.timing.ttsEndedAt = process.hrtime.bigint();
+      } catch (err) {
+        this.state.timing.ttsEndedAt = process.hrtime.bigint();
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[Session] Text-to-Speech failed:", message);
+        this.sendError("Text-to-Speech failed. Please try again.", false);
+        // TTS 失敗時も metrics は送信する（ttsMs は計測済みの時刻から算出）
+      }
+
+      // synthesize が null を返した場合（空テキスト等）は audio メッセージを送らない
+      if (ttsBase64 !== null) {
+        this.send({
+          type: "audio",
+          mimeType: "audio/mpeg",
+          data: ttsBase64,
+        });
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // metrics 送信
+    // ----------------------------------------------------------------
+    const timing = this.state.timing;
+
+    // speechMs: 発話開始〜確定
+    const speechMs =
+      timing.speechStartedAt !== null && timing.committedAt !== null
+        ? Number(timing.committedAt - timing.speechStartedAt) / 1e6
+        : 0;
+
+    // translationMs: Translation 呼び出し前〜結果受信
+    const translationMs =
+      timing.translationStartedAt !== null && timing.translationEndedAt !== null
+        ? Number(timing.translationEndedAt - timing.translationStartedAt) / 1e6
+        : 0;
+
+    // ttsMs: TTS 呼び出し前〜結果受信（TTS無効時は 0）
+    const ttsMs =
+      timing.ttsStartedAt !== null && timing.ttsEndedAt !== null
+        ? Number(timing.ttsEndedAt - timing.ttsStartedAt) / 1e6
+        : 0;
+
+    // totalMs: 発話開始〜TTS完了（TTS無効時は翻訳完了まで）
+    const pipelineEnd = timing.ttsEndedAt ?? timing.translationEndedAt;
+    const totalMs =
+      timing.speechStartedAt !== null && pipelineEnd !== null
+        ? Number(pipelineEnd - timing.speechStartedAt) / 1e6
+        : 0;
+
+    this.send({
+      type: "metrics",
+      speechMs,
+      translationMs,
+      ttsMs,
+      totalMs,
+    });
+
+    // 次の発話に備えてタイミングをリセットする
+    this.state.timing = Session.createEmptyTiming();
   }
 
   // ----------------------------------------------------------

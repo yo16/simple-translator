@@ -10,6 +10,11 @@
  *   createSpeechStream が SpeechStreamHandle 互換のスタブを返すよう設定する。
  *   各テストでモックストリームに対してコールバック（onInterim/onFinal/onError）を
  *   手動で呼び出し、Session の ws.send 呼び出しを検証する。
+ *
+ * タスク .8 対応:
+ *   onFinal → addFinalToBuffer → onUtteranceCommitted が translate/synthesize を
+ *   呼ぶようになったため、GCP 実通信を遮断するためにモックする。
+ *   既存テストの検証意図（STT配線、transcript_final/interim 送信等）は変えない。
  */
 
 import WebSocket from "ws";
@@ -21,6 +26,26 @@ import { createSpeechStream } from "../../server/speechStream";
 // speechStream モジュール全体をモック化する
 // ---------------------------------------------------------------------------
 jest.mock("../../server/speechStream");
+
+// ---------------------------------------------------------------------------
+// GCP 実通信遮断: translate / textToSpeech をモック化する
+// ---------------------------------------------------------------------------
+jest.mock("../../server/translate");
+jest.mock("../../server/textToSpeech");
+
+import { translate } from "../../server/translate";
+import { isTtsEnabled, synthesize } from "../../server/textToSpeech";
+
+const mockTranslate = translate as jest.MockedFunction<typeof translate>;
+const mockIsTtsEnabled = isTtsEnabled as jest.MockedFunction<typeof isTtsEnabled>;
+const mockSynthesize = synthesize as jest.MockedFunction<typeof synthesize>;
+
+// デフォルト: 翻訳は適当な訳文を返す、TTS は無効にする（テストの本質に影響しない）
+beforeEach(() => {
+  mockTranslate.mockResolvedValue("translated");
+  mockIsTtsEnabled.mockReturnValue(false);
+  mockSynthesize.mockResolvedValue(null);
+});
 
 const mockCreateSpeechStream = createSpeechStream as jest.MockedFunction<typeof createSpeechStream>;
 
@@ -296,6 +321,9 @@ describe("Session STT 配線 — onFinal コールバック", () => {
     expect(committed[0].text).toBe("発話テキスト");
     expect(committed[0].reason).toBe("commit");
 
+    // タスク .8 対応: commit で起動した非同期パイプラインの Promise を flush
+    jest.runAllTicks();
+
     session.dispose();
   });
 
@@ -320,6 +348,9 @@ describe("Session STT 配線 — onFinal コールバック", () => {
     expect(committed).toHaveLength(1);
     expect(committed[0].text).toContain("first sentence.");
     expect(committed[0].text).toContain("second sentence.");
+
+    // タスク .8 対応: commit で起動した非同期パイプラインの Promise を flush
+    jest.runAllTicks();
 
     session.dispose();
   });
