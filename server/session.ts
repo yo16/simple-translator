@@ -8,6 +8,7 @@ import {
   UtteranceBuffer,
 } from "./types";
 import { ClientMessage, StartMessage } from "./schema";
+import { UtteranceBufferManager } from "./utteranceBuffer";
 
 // ============================================================
 // Session クラス
@@ -17,13 +18,18 @@ import { ClientMessage, StartMessage } from "./schema";
  * 1接続 = 1 Session。
  * WebSocket 接続ごとに生成し、close 時に dispose() を呼ぶ。
  *
- * 後続タスク（.4 STT / .5 発話バッファ / .8 統合）との接続点:
+ * 後続タスク（.4 STT / .8 Translation/TTS 統合）との接続点:
  *   - onAudioChunk(data: Buffer): STT ストリームへの書き込み（.4 で実装）
- *   - commitUtterance(reason): 発話バッファ確定・Translation・TTS パイプライン（.5/.8 で実装）
+ *   - 確定後の Translation / TTS パイプライン（.8 で実装）
+ *
+ * 発話バッファ・区切り判定は UtteranceBufferManager へ委譲する。
  */
 export class Session {
   private readonly ws: WebSocket;
   private state: SessionState;
+
+  /** 発話バッファ・区切り判定マネージャー（start で再生成） */
+  private utteranceBuffer: UtteranceBufferManager | null = null;
 
   constructor(ws: WebSocket) {
     this.ws = ws;
@@ -67,7 +73,7 @@ export class Session {
       // 既に初期化済みの場合：セッションをリセットして再初期化する。
       // 再 start は設定変更（言語切り替えなど）のユースケースを想定し、
       // エラーとせずクリーンアップ後に受け入れる。
-      this.cleanupBuffer();
+      this.cleanupUtteranceBuffer();
       this.cleanupSpeech();
       console.log("[Session] Re-initializing session with new config");
     }
@@ -80,7 +86,7 @@ export class Session {
       chunkMs: msg.chunkMs,
       silenceMs: msg.silenceMs,
       maxChars: msg.maxChars,
-      maxSeconds: msg.maxSeconds,
+      maxSeconds: msg.maxSeconds, // 秒単位のまま保持（UtteranceBufferConfig へ渡す際にms変換）
     };
 
     this.state = {
@@ -90,6 +96,18 @@ export class Session {
       buffer: Session.createEmptyBuffer(),
       timing: Session.createEmptyTiming(),
     };
+
+    // UtteranceBufferManager を生成（確定コールバックで utterance_committed を送信）
+    this.utteranceBuffer = new UtteranceBufferManager(
+      {
+        silenceMs: config.silenceMs,
+        maxChars: config.maxChars,
+        maxSeconds: config.maxSeconds * 1000, // 秒→ミリ秒変換（SessionConfig は秒単位）
+      },
+      (text, reason) => {
+        this.onUtteranceCommitted(text, reason);
+      }
+    );
 
     console.log("[Session] Session initialized:", config);
   }
@@ -105,6 +123,11 @@ export class Session {
       this.state.timing.speechStartedAt = process.hrtime.bigint();
     }
 
+    // 無音タイマーリセット（audio 受信通知）
+    if (this.utteranceBuffer !== null) {
+      this.utteranceBuffer.notifyAudio();
+    }
+
     // STT ストリームへの書き込み接続点（.4 で実装）
     this.onAudioChunk(base64Data);
   }
@@ -115,15 +138,12 @@ export class Session {
       return;
     }
 
-    // バッファが空なら無視（設計: §websocket-protocol.md commit 仕様）
-    const bufferText = this.state.buffer.finals.join("");
-    if (bufferText.length === 0) {
-      console.log("[Session] Commit received but buffer is empty, ignoring.");
+    if (this.utteranceBuffer === null) {
       return;
     }
 
-    // 発話バッファ確定の接続点（.5/.8 で実装）
-    this.commitUtterance("commit");
+    // 空バッファの場合は commitManual() 内で無視される（コールバックを呼ばない）
+    this.utteranceBuffer.commitManual();
   }
 
   private handleStop(): void {
@@ -132,10 +152,9 @@ export class Session {
       return;
     }
 
-    // 残バッファがあれば確定（.5/.8 で実装）
-    const bufferText = this.state.buffer.finals.join("");
-    if (bufferText.length > 0) {
-      this.commitUtterance("stop");
+    if (this.utteranceBuffer !== null) {
+      // 空バッファの場合は commitStop() 内で無視される（コールバックを呼ばない）
+      this.utteranceBuffer.commitStop();
     }
 
     // STT ストリーム終了（.4 で実装）
@@ -166,12 +185,11 @@ export class Session {
   }
 
   /**
-   * 発話バッファ確定処理の接続点。
-   * タスク .5（utteranceBuffer）・.8（Translation/TTS 統合）で実装する。
-   * 現時点ではバッファテキストを収集して utterance_committed を送信し、バッファをクリアする。
+   * 発話バッファが確定されたときに UtteranceBufferManager のコールバックから呼ばれる。
+   * utterance_committed を送信し、committedAt を記録する。
+   * Translation / TTS パイプラインは .8 で実装する。
    */
-  protected commitUtterance(reason: UtteranceCommitReason): void {
-    const text = this.state.buffer.finals.join("");
+  protected onUtteranceCommitted(text: string, reason: UtteranceCommitReason): void {
     if (text.length === 0) {
       return;
     }
@@ -181,78 +199,73 @@ export class Session {
     // utterance_committed を送信
     this.send({ type: "utterance_committed", text, reason });
 
-    // バッファとタイマーをクリア
-    this.cleanupBuffer();
-
-    // .5/.8 で: Translation → TTS → metrics の順に送信する
+    // .8 で: Translation → TTS → metrics の順に送信する
     console.log(`[Session] Utterance committed: "${text}" (reason: ${reason})`);
   }
 
   // ----------------------------------------------------------
-  // 発話バッファ操作（.5 の utteranceBuffer.ts が置き換える想定）
+  // 発話バッファ操作（session.ts の公開 API として維持）
   // ----------------------------------------------------------
 
   /**
    * STT final result をバッファへ追加する。
    * タスク .4 から呼ばれる想定。
-   * 文字数上限チェック・無音タイマーリセット・最大発話タイマー起動は .5 で実装。
+   * 文字数上限チェック・無音タイマーリセット・最大発話タイマー起動は
+   * UtteranceBufferManager が担う。
    */
   public addFinalToBuffer(text: string): void {
     if (!this.state.initialized || !this.state.config) {
       return;
     }
 
-    const wasEmpty = this.state.buffer.finals.length === 0;
-    this.state.buffer.finals.push(text);
-
-    // 最大発話タイマー: バッファが空→非空になった時点で開始（.5 で本実装）
-    if (wasEmpty) {
-      const maxMs = this.state.config.maxSeconds * 1000;
-      this.state.buffer.maxDurationTimer = setTimeout(() => {
-        this.commitUtterance("maxSeconds");
-      }, maxMs);
-    }
-
-    // 文字数上限チェック（.5 で本実装）
-    const totalChars = this.state.buffer.finals.join("").length;
-    if (totalChars >= this.state.config.maxChars) {
-      this.commitUtterance("maxChars");
+    if (this.utteranceBuffer === null) {
       return;
     }
 
-    // 無音タイマーのリセット（.5 で本実装）
-    this.resetSilenceTimer();
+    // UtteranceBufferManager へ委譲
+    this.utteranceBuffer.addFinal(text);
+
+    // state.buffer（互換性維持用）を同期する
+    // UtteranceBufferManager が管理するため、state.buffer は参照用のスナップショット
+    // 実際のタイマー管理は utteranceBuffer が担う
+    this.syncBufferState();
   }
 
   /**
-   * 無音タイマーをリセットする。
-   * audio チャンク受信・final 追加のたびに呼ばれる。
+   * state.buffer（UtteranceBuffer 型・互換性維持用）を
+   * UtteranceBufferManager の現在状態に同期する。
+   *
+   * 注意: state.buffer の silenceTimer / maxDurationTimer は
+   * UtteranceBufferManager が管理するため null のままとなる。
+   * テストや外部参照では getText() / isEmpty() を使うことを推奨する。
    */
-  private resetSilenceTimer(): void {
-    if (!this.state.config) return;
-
-    if (this.state.buffer.silenceTimer !== null) {
-      clearTimeout(this.state.buffer.silenceTimer);
+  private syncBufferState(): void {
+    if (this.utteranceBuffer === null) {
+      this.state.buffer = Session.createEmptyBuffer();
+    } else {
+      // finals の現在値を反映（タイマー参照は null のまま）
+      const text = this.utteranceBuffer.getText();
+      this.state.buffer = {
+        finals: text.length > 0 ? [text] : [],
+        startedAt: this.state.buffer.startedAt,
+        silenceTimer: null,
+        maxDurationTimer: null,
+      };
     }
-
-    this.state.buffer.silenceTimer = setTimeout(() => {
-      const bufferText = this.state.buffer.finals.join("");
-      if (bufferText.length > 0) {
-        this.commitUtterance("silence");
-      }
-    }, this.state.config.silenceMs);
   }
 
   // ----------------------------------------------------------
   // クリーンアップ
   // ----------------------------------------------------------
 
-  private cleanupBuffer(): void {
-    if (this.state.buffer.silenceTimer !== null) {
-      clearTimeout(this.state.buffer.silenceTimer);
-    }
-    if (this.state.buffer.maxDurationTimer !== null) {
-      clearTimeout(this.state.buffer.maxDurationTimer);
+  /**
+   * UtteranceBufferManager を破棄する。
+   * start の再初期化・dispose の両方から呼ばれる。
+   */
+  private cleanupUtteranceBuffer(): void {
+    if (this.utteranceBuffer !== null) {
+      this.utteranceBuffer.destroy();
+      this.utteranceBuffer = null;
     }
     this.state.buffer = Session.createEmptyBuffer();
   }
@@ -272,7 +285,7 @@ export class Session {
    * 接続 close 時に呼ぶ。タイマーとSTTストリームを解放する。
    */
   public dispose(): void {
-    this.cleanupBuffer();
+    this.cleanupUtteranceBuffer();
     this.cleanupSpeech();
     console.log("[Session] Session disposed.");
   }
