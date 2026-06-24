@@ -121,4 +121,69 @@ describe("MetricsDisplay", () => {
       expect(zeroElements.length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  // ----------------------------------------------------------
+  // 3. clientPlaybackWaitMs あり — 新規表示
+  // ----------------------------------------------------------
+  describe("clientPlaybackWaitMs あり", () => {
+    it("clientPlaybackWaitMs が設定されているとき「再生までのクライアント待ち」が表示される", () => {
+      renderMetricsDisplay(makeMetrics({ totalMs: 600, clientPlaybackWaitMs: 80 }));
+      expect(screen.getByText(/再生までのクライアント待ち/)).toBeInTheDocument();
+    });
+
+    it("clientPlaybackWaitMs の値が ms 単位で表示される", () => {
+      renderMetricsDisplay(makeMetrics({ totalMs: 600, clientPlaybackWaitMs: 80 }));
+      expect(screen.getByText(/再生までのクライアント待ち 80ms/)).toBeInTheDocument();
+    });
+
+    it("「合計待ち時間（再生まで）」が表示される", () => {
+      renderMetricsDisplay(makeMetrics({ totalMs: 600, clientPlaybackWaitMs: 80 }));
+      expect(screen.getByText(/合計待ち時間（再生まで）/)).toBeInTheDocument();
+    });
+
+    it("合計待ち時間が totalMs + clientPlaybackWaitMs（Math.round）になっている", () => {
+      renderMetricsDisplay(makeMetrics({ totalMs: 600, clientPlaybackWaitMs: 80 }));
+      expect(screen.getByText(/合計待ち時間（再生まで） 680ms/)).toBeInTheDocument();
+    });
+
+    it("小数の clientPlaybackWaitMs が四捨五入して表示される", () => {
+      // 1.5ms → Math.round(1.5) = 2ms
+      renderMetricsDisplay(makeMetrics({ totalMs: 600, clientPlaybackWaitMs: 1.5 }));
+      expect(screen.getByText(/再生までのクライアント待ち 2ms/)).toBeInTheDocument();
+    });
+
+    it("合計待ち時間も小数を含む場合に四捨五入される", () => {
+      // totalMs=600, clientPlaybackWaitMs=1.5 → Math.round(601.5) = 602
+      renderMetricsDisplay(makeMetrics({ totalMs: 600, clientPlaybackWaitMs: 1.5 }));
+      expect(screen.getByText(/合計待ち時間（再生まで） 602ms/)).toBeInTheDocument();
+    });
+
+    it("clientPlaybackWaitMs=0 でも表示される（undefined ではなく 0）", () => {
+      renderMetricsDisplay(makeMetrics({ totalMs: 600, clientPlaybackWaitMs: 0 }));
+      expect(screen.getByText(/再生までのクライアント待ち 0ms/)).toBeInTheDocument();
+      expect(screen.getByText(/合計待ち時間（再生まで） 600ms/)).toBeInTheDocument();
+    });
+  });
+
+  // ----------------------------------------------------------
+  // 4. clientPlaybackWaitMs なし — 非表示
+  // ----------------------------------------------------------
+  describe("clientPlaybackWaitMs なし（undefined）", () => {
+    it("clientPlaybackWaitMs が undefined のとき「再生までのクライアント待ち」が表示されない", () => {
+      renderMetricsDisplay(makeMetrics({ clientPlaybackWaitMs: undefined }));
+      expect(screen.queryByText(/再生までのクライアント待ち/)).not.toBeInTheDocument();
+    });
+
+    it("clientPlaybackWaitMs が undefined のとき「合計待ち時間（再生まで）」が表示されない", () => {
+      renderMetricsDisplay(makeMetrics({ clientPlaybackWaitMs: undefined }));
+      expect(screen.queryByText(/合計待ち時間（再生まで）/)).not.toBeInTheDocument();
+    });
+
+    it("clientPlaybackWaitMs が省略されたとき追加行が表示されない", () => {
+      // makeMetrics() は clientPlaybackWaitMs を含まない
+      renderMetricsDisplay(makeMetrics());
+      expect(screen.queryByText(/再生までのクライアント待ち/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/合計待ち時間（再生まで）/)).not.toBeInTheDocument();
+    });
+  });
 });

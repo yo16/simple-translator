@@ -41,6 +41,8 @@ export interface Metrics {
   totalMs: number;
   /** クライアントで記録する再生開始時刻（Unix milliseconds） */
   playbackStartedAt?: number;
+  /** クライアントで計測した「audio受信〜再生開始」の待ち時間（ms） */
+  clientPlaybackWaitMs?: number;
 }
 
 export interface AppState {
@@ -76,6 +78,7 @@ export type AppAction =
   | { type: "COMMITTED"; text: string; reason: UtteranceCommitReason }
   | { type: "TRANSLATION"; sourceText: string; translatedText: string }
   | { type: "METRICS"; metrics: Metrics }
+  | { type: "PLAYBACK_WAIT"; waitMs: number }
   | { type: "ERROR"; message: string; fatal: boolean }
   | { type: "RESET" };
 

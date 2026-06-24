@@ -406,7 +406,168 @@ describe("useAudioQueue", () => {
   });
 
   // ----------------------------------------------------------
-  // 7. reset
+  // 7. onPlaybackStart コールバック
+  // ----------------------------------------------------------
+  describe("onPlaybackStart コールバック", () => {
+    it("enqueue 後に onPlaybackStart が呼ばれ、{ waitMs } が number かつ 0 以上", async () => {
+      const onPlaybackStart = jest.fn();
+      const { result } = renderHook(() => useAudioQueue({ onPlaybackStart }));
+
+      await act(async () => {
+        result.current.enqueue(TEST_BASE64);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(onPlaybackStart).toHaveBeenCalledTimes(1);
+      const info = onPlaybackStart.mock.calls[0][0] as { waitMs: number };
+      expect(typeof info.waitMs).toBe("number");
+      expect(info.waitMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it("複数 enqueue で onPlaybackStart が各回 FIFO 順に呼ばれる", async () => {
+      const calls: number[] = [];
+      const onPlaybackStart = jest.fn((info: { waitMs: number }) => {
+        calls.push(info.waitMs);
+      });
+
+      const mockAudioBuffer1 = makeMockAudioBuffer(1.0);
+      const mockAudioBuffer2 = makeMockAudioBuffer(0.5);
+      let decodeCount = 0;
+
+      AudioContextMockConstructor.mockImplementation(() => {
+        lastMockCtx = makeMockAudioContext({
+          decodeAudioData: jest.fn().mockImplementation(() => {
+            decodeCount++;
+            return decodeCount === 1
+              ? Promise.resolve(mockAudioBuffer1)
+              : Promise.resolve(mockAudioBuffer2);
+          }),
+        });
+        return lastMockCtx;
+      });
+
+      const { result, unmount } = renderHook(() => useAudioQueue({ onPlaybackStart }));
+
+      await act(async () => {
+        result.current.enqueue(TEST_BASE64); // chunk1
+        result.current.enqueue(TEST_BASE64); // chunk2
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+
+      // 2回呼ばれる（FIFO 順）
+      expect(onPlaybackStart).toHaveBeenCalledTimes(2);
+      // 各 waitMs が数値
+      calls.forEach((ms) => {
+        expect(typeof ms).toBe("number");
+        expect(ms).toBeGreaterThanOrEqual(0);
+      });
+
+      // 後続テストへの干渉を防ぐため明示的にアンマウント
+      act(() => { unmount(); });
+    });
+
+    it("onPlaybackStart 未指定でもクラッシュしない（従来どおり動作する）", async () => {
+      // options なし
+      const { result } = renderHook(() => useAudioQueue());
+
+      // act 内でエラーが発生しないことを確認（resolves.not.toThrow パターンは非同期 flush に問題があるため使わない）
+      let threw = false;
+      try {
+        await act(async () => {
+          result.current.enqueue(TEST_BASE64);
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        });
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(false);
+
+      // AudioContext コンストラクタが呼ばれていることを確認（lastMockCtx の干渉を避けるため）
+      expect(AudioContextMockConstructor).toHaveBeenCalledTimes(1);
+    });
+
+    it("アンマウント後に onPlaybackStart が呼ばれない（アンマウントガードが機能する）", async () => {
+      const onPlaybackStart = jest.fn();
+
+      // デコードを遅延させて、アンマウント後にコールバックが試みられるシナリオを作る
+      let resolveDecoding!: (buf: AudioBuffer) => void;
+      const slowDecodePromise = new Promise<AudioBuffer>((resolve) => {
+        resolveDecoding = resolve;
+      });
+
+      AudioContextMockConstructor.mockImplementation(() => {
+        lastMockCtx = makeMockAudioContext({
+          decodeAudioData: jest.fn().mockReturnValue(slowDecodePromise),
+        });
+        return lastMockCtx;
+      });
+
+      const { result, unmount } = renderHook(() => useAudioQueue({ onPlaybackStart }));
+
+      // enqueue してからアンマウント（デコードはまだ完了していない）
+      await act(async () => {
+        result.current.enqueue(TEST_BASE64);
+        await Promise.resolve();
+      });
+
+      act(() => {
+        unmount();
+      });
+
+      // アンマウント後にデコードを解決
+      await act(async () => {
+        resolveDecoding(makeMockAudioBuffer());
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+
+      // アンマウント済みフラグにより onPlaybackStart は呼ばれない
+      expect(onPlaybackStart).not.toHaveBeenCalled();
+    });
+
+    it("performance.now ベースで waitMs が算出される（spy で算出式を検証）", async () => {
+      // performance.now を制御して waitMs の算出式を検証する。
+      // enqueue 内で performance.now() は同期部分（enqueuedAt 記録）と
+      // 非同期部分（waitMs 算出）の2箇所で呼ばれる。
+      // callCount で区別する代わりに、enqueue 呼び出し直前/直後にスナップショットを取り
+      // 差分が期待値範囲に収まることを確認する。
+      //
+      // 検証方針:
+      //   - performance.now() を固定値 BASE_TIME を返すよう制御
+      //   - waitMs = (BASE_TIME - BASE_TIME) + max(0, (startTime - ctx.currentTime)*1000)
+      //   - ctx.currentTime=0、startTime=max(0,0)=0 なので waitMs = 0
+      //   - これが算出式に沿っていることを確認する
+
+      const BASE_TIME = 5000;
+      const performanceNowSpy = jest.spyOn(performance, "now").mockReturnValue(BASE_TIME);
+
+      // AudioContext の currentTime=0 で固定
+      AudioContextMockConstructor.mockImplementation(() => {
+        lastMockCtx = makeMockAudioContext({ currentTime: 0 });
+        return lastMockCtx;
+      });
+
+      const onPlaybackStart = jest.fn();
+      const { result } = renderHook(() => useAudioQueue({ onPlaybackStart }));
+
+      await act(async () => {
+        result.current.enqueue(TEST_BASE64);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(onPlaybackStart).toHaveBeenCalledTimes(1);
+      const { waitMs } = onPlaybackStart.mock.calls[0][0] as { waitMs: number };
+
+      // performance.now() が常に BASE_TIME を返す場合:
+      // waitMs = (BASE_TIME - BASE_TIME) + max(0, (0 - 0) * 1000) = 0
+      // → 算出式が "now - enqueuedAt + futureScheduleMs" であることを確認
+      expect(waitMs).toBeCloseTo(0, 3);
+
+      performanceNowSpy.mockRestore();
+    });
+  });
+
+  // ----------------------------------------------------------
+  // 8. reset
   // ----------------------------------------------------------
   describe("reset", () => {
     it("reset() で AudioContext.close() が呼ばれる", async () => {

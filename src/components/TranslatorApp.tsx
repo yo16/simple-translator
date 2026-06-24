@@ -19,6 +19,7 @@ import { appReducer, initialState, AppActions } from "../lib/appReducer";
 import { useWebSocketWithAudio } from "../hooks/useWebSocket";
 import { useRecorder } from "../hooks/useRecorder";
 import { useAudioQueue } from "../hooks/useAudioQueue";
+import type { PlaybackStartInfo } from "../hooks/useAudioQueue";
 import type { AppAction, Settings } from "../lib/types";
 import { Recorder } from "./Recorder";
 import { LanguageSelector } from "./LanguageSelector";
@@ -77,7 +78,19 @@ export function TranslatorApp() {
   // useAudioQueue: 受信音声の FIFO 再生
   // ----------------------------------------------------------
 
-  const audioQueue = useAudioQueue();
+  /**
+   * dispatch の最新参照（onPlaybackStart コールバック内での stale closure 対策）。
+   */
+  const dispatchRef = useRef<React.Dispatch<AppAction>>(dispatch);
+  useEffect(() => {
+    dispatchRef.current = dispatch;
+  });
+
+  const audioQueue = useAudioQueue({
+    onPlaybackStart: useCallback(({ waitMs }: PlaybackStartInfo) => {
+      dispatchRef.current(AppActions.playbackWait(waitMs));
+    }, []),
+  });
 
   // ----------------------------------------------------------
   // useWebSocket: WebSocket ライフサイクル統合

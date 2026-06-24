@@ -21,6 +21,22 @@ import { useCallback, useEffect, useRef } from "react";
 // 型定義
 // ============================================================
 
+/** onPlaybackStart コールバックに渡す情報 */
+export interface PlaybackStartInfo {
+  /** enqueue 呼び出しから実際の再生開始までの待ち時間（ms）。
+   *  = decodeAudioData の所要時間 + キュー待機時間 + 将来スケジュール分 */
+  waitMs: number;
+}
+
+/** useAudioQueue のオプション */
+export interface UseAudioQueueOptions {
+  /**
+   * 各音声チャンクの再生が開始される直前に呼ばれるコールバック。
+   * waitMs はその項目が enqueue されてから再生開始されるまでの経過時間（ms）。
+   */
+  onPlaybackStart?: (info: PlaybackStartInfo) => void;
+}
+
 /** useAudioQueue の戻り値 */
 export interface AudioQueueHandle {
   /**
@@ -62,9 +78,14 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 /**
  * MP3 base64 チャンクを FIFO キューで順次再生するフック。
  *
+ * @param options.onPlaybackStart 各チャンクの再生開始時に呼ばれるコールバック
  * @returns AudioQueueHandle（enqueue / reset）
  */
-export function useAudioQueue(): AudioQueueHandle {
+export function useAudioQueue(options?: UseAudioQueueOptions): AudioQueueHandle {
+  /**
+   * onPlaybackStart コールバックへの最新参照（stale closure 対策）。
+   */
+  const onPlaybackStartRef = useRef<UseAudioQueueOptions["onPlaybackStart"]>(undefined);
   /**
    * アンマウント済みフラグ。
    * アンマウント後に非同期の enqueue が呼ばれても AudioContext を再生成しないよう制御する。
@@ -107,7 +128,6 @@ export function useAudioQueue(): AudioQueueHandle {
     // Safari 対応: window.webkitAudioContext が存在する場合はそちらを使う
     const AudioContextClass =
       window.AudioContext ??
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 
     const ctx = new AudioContextClass();
@@ -118,6 +138,11 @@ export function useAudioQueue(): AudioQueueHandle {
 
     return ctx;
   }, []);
+
+  // onPlaybackStart の最新参照を常に更新する（stale closure 対策）
+  useEffect(() => {
+    onPlaybackStartRef.current = options?.onPlaybackStart;
+  });
 
   // ----------------------------------------------------------
   // アンマウント時のクリーンアップ
@@ -147,6 +172,9 @@ export function useAudioQueue(): AudioQueueHandle {
     (base64: string) => {
       // アンマウント済みの場合は即座に何もしない（AudioContext 再生成によるリーク防止）
       if (isUnmountedRef.current) return;
+
+      // enqueue 呼び出し時刻を記録する（再生開始までの待ち時間算出のため）
+      const enqueuedAt = performance.now();
 
       // 処理キューに連鎖させることで enqueue 順（FIFO）を保証する
       processingQueueRef.current = processingQueueRef.current.then(async () => {
@@ -195,6 +223,18 @@ export function useAudioQueue(): AudioQueueHandle {
         source.buffer = audioBuffer;
         source.connect(ctx.destination);
         source.start(startTime);
+
+        // 再生開始までのクライアント待ち時間を算出してコールバックを呼ぶ
+        // waitMs = (performance.now() - enqueuedAt) + 将来スケジュール分
+        //   - performance.now() - enqueuedAt: decodeAudioData + キュー待機の実経過時間
+        //   - Math.max(0, (startTime - ctx.currentTime) * 1000): 将来スケジュール分（秒→ms）
+        const waitMs =
+          (performance.now() - enqueuedAt) +
+          Math.max(0, (startTime - ctx.currentTime) * 1000);
+        const cb = onPlaybackStartRef.current;
+        if (cb) {
+          cb({ waitMs });
+        }
 
         // 次のチャンクの開始時刻を更新する（途切れなく連続再生するための計算）
         nextStartTimeRef.current = startTime + audioBuffer.duration;

@@ -108,10 +108,24 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ...action.metrics,
         // playbackStartedAt はクライアント側で別途設定するため、既存値を引き継ぐ
         playbackStartedAt: prev?.playbackStartedAt,
+        // 新しい発話の metrics が来たら clientPlaybackWaitMs をクリア（古い待ち時間を引きずらない）
+        clientPlaybackWaitMs: undefined,
       };
       return {
         ...state,
         metrics: updated,
+      };
+    }
+
+    case "PLAYBACK_WAIT": {
+      // metrics が null のときは無視（クラッシュしない）
+      if (state.metrics === null) return state;
+      return {
+        ...state,
+        metrics: {
+          ...state.metrics,
+          clientPlaybackWaitMs: action.waitMs,
+        },
       };
     }
 
@@ -170,6 +184,10 @@ export const AppActions = {
   metrics: (metrics: Metrics): AppAction => ({
     type: "METRICS",
     metrics,
+  }),
+  playbackWait: (waitMs: number): AppAction => ({
+    type: "PLAYBACK_WAIT",
+    waitMs,
   }),
   error: (message: string, fatal: boolean): AppAction => ({
     type: "ERROR",
