@@ -268,9 +268,9 @@ describe("maxSeconds タイマー — バッファが空→非空になった時
 });
 
 // ---------------------------------------------------------------------------
-// 4. notifyAudio — 無音タイマーのリセット（.3 誤発火バグ対策検証）
+// 4. notifyInterim — 無音タイマーのリセット（バグ修正: STT活動でリセット）
 // ---------------------------------------------------------------------------
-describe("notifyAudio — 無音タイマーのリセット", () => {
+describe("notifyInterim — 無音タイマーのリセット", () => {
   let onCommit: jest.Mock;
   let mgr: UtteranceBufferManager;
 
@@ -284,32 +284,32 @@ describe("notifyAudio — 無音タイマーのリセット", () => {
     jest.useRealTimers();
   });
 
-  test("notifyAudio が silenceMs の途中でタイマーをリセットする（初回の silenceMs 経過では確定しない）", () => {
+  test("notifyInterim が silenceMs の途中でタイマーをリセットする（初回の silenceMs 経過では確定しない）", () => {
     // Arrange: silenceMs=1000
     mgr = new UtteranceBufferManager(makeConfig({ silenceMs: 1000 }), onCommit);
     mgr.addFinal("hello");
 
-    // Act: 600ms 後に notifyAudio でリセット
+    // Act: 600ms 後に notifyInterim でリセット
     jest.advanceTimersByTime(600);
-    mgr.notifyAudio();
+    mgr.notifyInterim();
 
-    // Act: さらに 600ms（最初の addFinal から 1200ms だが、notifyAudio からは 600ms）
+    // Act: さらに 600ms（最初の addFinal から 1200ms だが、notifyInterim からは 600ms）
     jest.advanceTimersByTime(600);
 
-    // Assert: まだ確定されていない（notifyAudio からのリセット後 600ms しか経っていない）
+    // Assert: まだ確定されていない（notifyInterim からのリセット後 600ms しか経っていない）
     expect(onCommit).not.toHaveBeenCalled();
   });
 
-  test("notifyAudio 後に silenceMs 経過すると確定される", () => {
+  test("notifyInterim 後に silenceMs 経過すると確定される", () => {
     // Arrange
     mgr = new UtteranceBufferManager(makeConfig({ silenceMs: 1000 }), onCommit);
     mgr.addFinal("hello");
 
-    // Act: 600ms 後に notifyAudio
+    // Act: 600ms 後に notifyInterim
     jest.advanceTimersByTime(600);
-    mgr.notifyAudio();
+    mgr.notifyInterim();
 
-    // Act: さらに 1000ms（notifyAudio からの silenceMs 経過）
+    // Act: さらに 1000ms（notifyInterim からの silenceMs 経過）
     jest.advanceTimersByTime(1000);
 
     // Assert
@@ -317,36 +317,36 @@ describe("notifyAudio — 無音タイマーのリセット", () => {
     expect(onCommit).toHaveBeenCalledWith("hello", "silence");
   });
 
-  test("バッファが空のときの notifyAudio はタイマーを起動しない（空バッファへの silence 誤発火防止）", () => {
-    // Arrange: バッファが空の状態で notifyAudio
+  test("バッファが空のときの notifyInterim はタイマーを起動しない（空バッファへの silence 誤発火防止）", () => {
+    // Arrange: バッファが空の状態で notifyInterim
     mgr = new UtteranceBufferManager(makeConfig({ silenceMs: 100 }), onCommit);
 
-    // Act: 空バッファで notifyAudio → 十分な時間を進める
-    mgr.notifyAudio();
+    // Act: 空バッファで notifyInterim → 十分な時間を進める
+    mgr.notifyInterim();
     jest.advanceTimersByTime(1000);
 
     // Assert: コールバックが呼ばれない
     expect(onCommit).not.toHaveBeenCalled();
   });
 
-  test("複数回の notifyAudio でタイマーが都度リセットされ、最後の notifyAudio から silenceMs 後に確定", () => {
+  test("複数回の notifyInterim でタイマーが都度リセットされ、最後の notifyInterim から silenceMs 後に確定", () => {
     // Arrange
     mgr = new UtteranceBufferManager(makeConfig({ silenceMs: 1000 }), onCommit);
     mgr.addFinal("speech");
 
-    // Act: 300ms → notifyAudio → 300ms → notifyAudio → 300ms → notifyAudio
+    // Act: 300ms → notifyInterim → 300ms → notifyInterim → 300ms → notifyInterim
     jest.advanceTimersByTime(300);
-    mgr.notifyAudio();
+    mgr.notifyInterim();
     jest.advanceTimersByTime(300);
-    mgr.notifyAudio();
+    mgr.notifyInterim();
     jest.advanceTimersByTime(300);
-    mgr.notifyAudio();
+    mgr.notifyInterim();
 
-    // 最後の notifyAudio から 999ms — まだ確定されない
+    // 最後の notifyInterim から 999ms — まだ確定されない
     jest.advanceTimersByTime(999);
     expect(onCommit).not.toHaveBeenCalled();
 
-    // 最後の notifyAudio から 1000ms — 確定される
+    // 最後の notifyInterim から 1000ms — 確定される
     jest.advanceTimersByTime(1);
     expect(onCommit).toHaveBeenCalledTimes(1);
     expect(onCommit).toHaveBeenCalledWith("speech", "silence");
@@ -528,10 +528,10 @@ describe("空バッファへの操作 — コールバックが呼ばれない",
     expect(onCommit).not.toHaveBeenCalled();
   });
 
-  test("空バッファで silence タイマーが発火してもコールバックを呼ばない（notifyAudio が空バッファでタイマー非起動）", () => {
-    // Arrange: バッファ空で notifyAudio を呼んでも、silenceMs 後にコールバックが呼ばれない
+  test("空バッファで silence タイマーが発火してもコールバックを呼ばない（notifyInterim が空バッファでタイマー非起動）", () => {
+    // Arrange: バッファ空で notifyInterim を呼んでも、silenceMs 後にコールバックが呼ばれない
     mgr = new UtteranceBufferManager(makeConfig({ silenceMs: 100 }), onCommit);
-    mgr.notifyAudio();
+    mgr.notifyInterim();
 
     // Act
     jest.advanceTimersByTime(200);

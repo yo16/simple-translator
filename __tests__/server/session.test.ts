@@ -280,9 +280,9 @@ describe("空バッファ時のコミット — utterance_committed が送信さ
 });
 
 // ---------------------------------------------------------------------------
-// 3. handleMessage({type:'audio'}) で無音タイマーがリセットされる
+// 3. handleMessage({type:'audio'}) — 無音タイマーをリセットしない（バグ修正後の正しい挙動）
 // ---------------------------------------------------------------------------
-describe("handleMessage({type:'audio'}) — 無音タイマーのリセット", () => {
+describe("handleMessage({type:'audio'}) — audio は無音タイマーをリセットしない", () => {
   let mockWs: ReturnType<typeof createMockWs>;
   let session: Session;
 
@@ -297,41 +297,52 @@ describe("handleMessage({type:'audio'}) — 無音タイマーのリセット", 
     jest.useRealTimers();
   });
 
-  test("audio 受信で無音タイマーがリセットされ、初回の silenceMs 経過では確定されない", () => {
+  test("addFinal 後に audio が来ても無音タイマーはリセットされず、silenceMs 経過で確定される", () => {
     // Arrange: silenceMs=1000
     session.handleMessage(makeStartMsg({ silenceMs: 1000 }));
     session.addFinalToBuffer("speech");
 
-    // Act: 600ms 後に audio を受信（タイマーリセット）
+    // Act: 600ms 後に audio を受信（バグ修正後は無音タイマーをリセットしない）
     jest.advanceTimersByTime(600);
     session.handleMessage({ type: "audio", data: "SGVsbG8=" }); // base64("Hello")
 
-    // Act: さらに 600ms（最初の addFinal から1200ms 経過したが、audio からは600ms）
-    jest.advanceTimersByTime(600);
+    // Act: addFinal から合計 1000ms 経過（audio が来ても silence タイマーは動き続ける）
+    jest.advanceTimersByTime(400);
 
-    // Assert: まだ確定されない（audio でリセットされているため）
-    const messages = getSentMessages(mockWs);
-    const committed = messages.filter((m) => m.type === "utterance_committed");
-    expect(committed).toHaveLength(0);
-  });
-
-  test("audio でリセット後に silenceMs 経過すると確定される", () => {
-    // Arrange
-    session.handleMessage(makeStartMsg({ silenceMs: 1000 }));
-    session.addFinalToBuffer("speech");
-
-    // Act: 600ms 後に audio
-    jest.advanceTimersByTime(600);
-    session.handleMessage({ type: "audio", data: "SGVsbG8=" });
-
-    // Act: audio から 1000ms 経過
-    jest.advanceTimersByTime(1000);
-
-    // Assert
+    // Assert: audio がリセットしないので、addFinal から 1000ms で確定される
     const messages = getSentMessages(mockWs);
     const committed = messages.filter((m) => m.type === "utterance_committed");
     expect(committed).toHaveLength(1);
     expect(committed[0].reason).toBe("silence");
+
+    // タスク .8 対応: silence タイマー発火後に起動する非同期パイプラインの Promise を flush
+    jest.runAllTicks();
+  });
+
+  test("audio を何度受信しても silenceMs 経過前には確定されず、経過後に確定される（タイマーは addFinal 起点）", () => {
+    // Arrange: silenceMs=1000
+    session.handleMessage(makeStartMsg({ silenceMs: 1000 }));
+    session.addFinalToBuffer("speech");
+
+    // Act: 900ms 間に複数の audio チャンクを受信（バグ修正後はリセットしない）
+    jest.advanceTimersByTime(300);
+    session.handleMessage({ type: "audio", data: "AAAA" });
+    jest.advanceTimersByTime(300);
+    session.handleMessage({ type: "audio", data: "BBBB" });
+    jest.advanceTimersByTime(300);
+    session.handleMessage({ type: "audio", data: "CCCC" });
+
+    // addFinal から 900ms 時点 — まだ確定されていない
+    const messagesAt900 = getSentMessages(mockWs);
+    const committedAt900 = messagesAt900.filter((m) => m.type === "utterance_committed");
+    expect(committedAt900).toHaveLength(0);
+
+    // addFinal から 1000ms 経過 — 確定される
+    jest.advanceTimersByTime(100);
+    const messagesAt1000 = getSentMessages(mockWs);
+    const committedAt1000 = messagesAt1000.filter((m) => m.type === "utterance_committed");
+    expect(committedAt1000).toHaveLength(1);
+    expect(committedAt1000[0].reason).toBe("silence");
 
     // タスク .8 対応: silence タイマー発火後に起動する非同期パイプラインの Promise を flush
     jest.runAllTicks();

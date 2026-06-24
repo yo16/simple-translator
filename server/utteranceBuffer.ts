@@ -79,13 +79,13 @@ export class UtteranceBufferManager {
   }
 
   /**
-   * 音声受信通知。audio チャンク受信のたびに呼ぶことで無音タイマーをリセットする。
+   * interim / STT 結果活動で無音タイマーをリセットする。バッファ非空時のみ。
    *
    * バッファが空の場合（まだ final がない状態）は無音タイマーを操作しない。
    * 理由: バッファが空のまま無音タイマーを起動すると、空バッファへの
    * silence 確定を誤発火する可能性があるため。
    */
-  notifyAudio(): void {
+  notifyInterim(): void {
     if (this.finals.length > 0) {
       this.resetSilenceTimer();
     }
