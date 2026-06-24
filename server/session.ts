@@ -9,6 +9,7 @@ import {
 } from "./types";
 import { ClientMessage, StartMessage } from "./schema";
 import { UtteranceBufferManager } from "./utteranceBuffer";
+import { createSpeechStream } from "./speechStream";
 
 // ============================================================
 // Session クラス
@@ -175,13 +176,55 @@ export class Session {
   // ----------------------------------------------------------
 
   /**
-   * 音声チャンクを受信したときの処理接続点。
-   * タスク .4（STT 連携）でこのメソッドを実装する。
-   * 現時点では受信ログのみ出力する。
+   * 音声チャンクを受信したときの処理。
+   * STT ストリームが未生成なら生成し、base64 → Buffer 変換後に write する。
+   *
+   * - ストリームはセッション中切り直さない（WebM/Opus コンテナヘッダは最初のチャンクのみ）。
+   * - interim コールバック → transcript_interim 送信（表示のみ）
+   * - final コールバック → transcript_final 送信 + addFinalToBuffer（発話バッファ蓄積）
+   * - error コールバック → sendError(message, false)（接続維持）
+   * - 無音タイマーリセットは handleAudio が notifyAudio() で既に行うため、ここでは行わない。
    */
   protected onAudioChunk(base64Data: string): void {
-    // .4 で: Buffer.from(base64Data, "base64") → STT ストリームへ write
-    console.log(`[Session] Audio chunk received (${base64Data.length} base64 chars)`);
+    if (!this.state.initialized || !this.state.config) {
+      // handleAudio が既にガードしているが念のため
+      return;
+    }
+
+    // STT ストリームが未生成の場合のみ生成する（セッション中切り直さない）
+    if (this.state.speech === null) {
+      const sourceLanguage = this.state.config.sourceLanguage;
+
+      const speechHandle = createSpeechStream({
+        languageCode: sourceLanguage, // フルコード（"ja-JP" / "en-US"）のまま渡す
+        onInterim: (text: string) => {
+          // 表示専用: transcript_interim を送信（翻訳・TTS は行わない）
+          this.send({ type: "transcript_interim", text });
+        },
+        onFinal: (text: string) => {
+          // transcript_final を送信し、発話バッファへ蓄積する
+          this.send({ type: "transcript_final", text });
+          this.addFinalToBuffer(text);
+        },
+        onError: (message: string, fatal: boolean) => {
+          // fatal:false の場合は接続を維持してクライアントに通知する
+          this.sendError(message, fatal);
+        },
+      });
+
+      this.state.speech = speechHandle;
+      console.log(`[Session] STT stream created for language: ${sourceLanguage}`);
+    }
+
+    // base64 → Buffer 変換後に STT ストリームへ書き込む
+    try {
+      const buffer = Buffer.from(base64Data, "base64");
+      this.state.speech.write(buffer);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Session] Error writing audio chunk to STT stream:", message);
+      this.sendError("Failed to process audio chunk.", false);
+    }
   }
 
   /**
