@@ -307,6 +307,21 @@ describe("MetricsDisplay スナップショット", () => {
     );
     expect(asFragment()).toMatchSnapshot();
   });
+
+  it("clientPlaybackWaitMs ありのとき再生待ち・合計待ち時間が追加される（クラス名も含む）", () => {
+    const { asFragment } = render(
+      React.createElement(MetricsDisplay, {
+        metrics: {
+          speechMs: 150,
+          translationMs: 250,
+          ttsMs: 350,
+          totalMs: 750,
+          clientPlaybackWaitMs: 100,
+        },
+      })
+    );
+    expect(asFragment()).toMatchSnapshot();
+  });
 });
 
 // ----------------------------------------------------------

@@ -24,6 +24,9 @@ export function MetricsDisplay({ metrics }: MetricsDisplayProps) {
     return null;
   }
 
+  const { clientPlaybackWaitMs } = metrics;
+  const hasClientWait = clientPlaybackWaitMs !== undefined;
+
   return (
     <div className={styles.metricsDisplay} aria-label="レイテンシ情報">
       <strong className={styles.heading}>レイテンシ: </strong>
@@ -34,6 +37,18 @@ export function MetricsDisplay({ metrics }: MetricsDisplayProps) {
       <span className={styles.item}>音声合成 {metrics.ttsMs}ms</span>
       <span className={styles.separator} aria-hidden="true">{" | "}</span>
       <span className={styles.item}>合計 {metrics.totalMs}ms</span>
+      {hasClientWait && (
+        <>
+          <span className={styles.separator} aria-hidden="true">{" | "}</span>
+          <span className={styles.item}>
+            再生までのクライアント待ち {Math.round(clientPlaybackWaitMs)}ms
+          </span>
+          <span className={styles.separator} aria-hidden="true">{" | "}</span>
+          <span className={styles.item}>
+            合計待ち時間（再生まで） {Math.round(metrics.totalMs + clientPlaybackWaitMs)}ms
+          </span>
+        </>
+      )}
     </div>
   );
 }

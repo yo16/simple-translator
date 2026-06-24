@@ -421,7 +421,84 @@ describe("appReducer", () => {
   });
 
   // ----------------------------------------------------------
-  // 11. AppActions ヘルパー
+  // 11. PLAYBACK_WAIT アクション
+  // ----------------------------------------------------------
+  describe("PLAYBACK_WAIT アクション", () => {
+    it("metrics が非 null のとき clientPlaybackWaitMs が設定される", () => {
+      const state = makeState({ metrics: makeMetrics() });
+      const next = appReducer(state, AppActions.playbackWait(123));
+      expect(next.metrics?.clientPlaybackWaitMs).toBe(123);
+    });
+
+    it("metrics が null のとき state がそのまま返る（クラッシュしない）", () => {
+      const state = makeState({ metrics: null });
+      const next = appReducer(state, AppActions.playbackWait(123));
+      expect(next).toBe(state);
+    });
+
+    it("metrics が null のとき metrics は null のまま", () => {
+      const state = makeState({ metrics: null });
+      const next = appReducer(state, AppActions.playbackWait(999));
+      expect(next.metrics).toBeNull();
+    });
+
+    it("waitMs=0 でも正しく設定される", () => {
+      const state = makeState({ metrics: makeMetrics() });
+      const next = appReducer(state, AppActions.playbackWait(0));
+      expect(next.metrics?.clientPlaybackWaitMs).toBe(0);
+    });
+
+    it("PLAYBACK_WAIT は入力 state を mutate しない", () => {
+      const state = makeState({ metrics: makeMetrics() });
+      const stateBefore = JSON.stringify(state);
+      appReducer(state, AppActions.playbackWait(100));
+      expect(JSON.stringify(state)).toBe(stateBefore);
+    });
+
+    it("他のフィールド（status / transcript / error）は変わらない", () => {
+      const state = makeState({
+        status: "recording",
+        metrics: makeMetrics(),
+        transcript: { ...initialState.transcript, interim: "中間テキスト" },
+        error: "既存エラー",
+      });
+      const next = appReducer(state, AppActions.playbackWait(50));
+      expect(next.status).toBe("recording");
+      expect(next.transcript.interim).toBe("中間テキスト");
+      expect(next.error).toBe("既存エラー");
+    });
+  });
+
+  // ----------------------------------------------------------
+  // 12. METRICS アクションによる clientPlaybackWaitMs クリア
+  // ----------------------------------------------------------
+  describe("METRICS アクションによる clientPlaybackWaitMs クリア", () => {
+    it("METRICS アクションで clientPlaybackWaitMs が undefined にクリアされる", () => {
+      const state = makeState({
+        metrics: makeMetrics({ clientPlaybackWaitMs: 200 }),
+      });
+      const next = appReducer(state, AppActions.metrics(makeMetrics()));
+      expect(next.metrics?.clientPlaybackWaitMs).toBeUndefined();
+    });
+
+    it("METRICS → PLAYBACK_WAIT → METRICS の順で古い待ち時間が次の METRICS でクリアされる", () => {
+      // Step1: METRICS で metrics を設定
+      const state1 = appReducer(makeState(), AppActions.metrics(makeMetrics({ totalMs: 500 })));
+      expect(state1.metrics?.clientPlaybackWaitMs).toBeUndefined();
+
+      // Step2: PLAYBACK_WAIT で clientPlaybackWaitMs を設定
+      const state2 = appReducer(state1, AppActions.playbackWait(150));
+      expect(state2.metrics?.clientPlaybackWaitMs).toBe(150);
+
+      // Step3: 次の METRICS が来たら clientPlaybackWaitMs がクリアされる
+      const state3 = appReducer(state2, AppActions.metrics(makeMetrics({ totalMs: 600 })));
+      expect(state3.metrics?.clientPlaybackWaitMs).toBeUndefined();
+      expect(state3.metrics?.totalMs).toBe(600);
+    });
+  });
+
+  // ----------------------------------------------------------
+  // 13. AppActions ヘルパー
   // ----------------------------------------------------------
   describe("AppActions ヘルパー", () => {
     it("statusChanged が正しい型の action を返す", () => {
@@ -463,6 +540,11 @@ describe("appReducer", () => {
     it("reset が正しい型の action を返す", () => {
       const action = AppActions.reset();
       expect(action).toEqual({ type: "RESET" });
+    });
+
+    it("playbackWait が正しい型の action を返す", () => {
+      const action = AppActions.playbackWait(42);
+      expect(action).toEqual({ type: "PLAYBACK_WAIT", waitMs: 42 });
     });
   });
 });
