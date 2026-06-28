@@ -31,7 +31,7 @@ export type UtteranceCommitReason =
 // ============================================================
 
 export interface TimingMarks {
-  /** 発話開始時刻（最初の audio/interim を受け取った時刻）。BigInt nanoseconds */
+  /** 発話開始時刻（最初の audio チャンクを受け取った時刻）。BigInt nanoseconds */
   speechStartedAt: bigint | null;
   /** 発話区切り確定時刻 */
   committedAt: bigint | null;

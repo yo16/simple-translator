@@ -57,7 +57,7 @@
   "targetLanguage": "en-US",
   "enableTts": true,
   "enableInterimTranslation": false,
-  "chunkMs": 500,
+  "chunkMs": 250,
   "silenceMs": 1000,
   "maxChars": 80,
   "maxSeconds": 10
@@ -70,13 +70,13 @@
 | `sourceLanguage` | `"ja-JP" \| "en-US"` | ○ | 入力言語（MVPは2値のみ） |
 | `targetLanguage` | `"ja-JP" \| "en-US"` | ○ | 出力言語（sourceと異なること） |
 | `enableTts` | `boolean` | ○ | TTS有効/無効 |
-| `enableInterimTranslation` | `boolean` | △ | 省略時 false。interim 仮翻訳モード（初期OFF） |
-| `chunkMs` | `number` | ○ | 音声チャンク間隔(ms)。例 500 / 1000 |
+| `enableInterimTranslation` | `boolean` | △ | 省略時 false。interim 仮翻訳モード（初期OFF）。クライアントは常に送信するが、サーバーschemaでは optional（省略時 false）。なお実装ではサーバーは interim 翻訳経路を持たず、本フラグは予約扱い（bd-simple-translator-mgk、[server-design.md](./server-design.md#翻訳要件-154) 参照） |
+| `chunkMs` | `number` | ○ | 音声チャンク間隔(ms)。既定250（bd-simple-translator-mgk） |
 | `silenceMs` | `number` | ○ | 無音区切り判定(ms)。既定1000 |
 | `maxChars` | `number` | ○ | 確定テキスト最大文字数。既定80 |
 | `maxSeconds` | `number` | ○ | 同一発話最大秒数。既定10 |
 
-> 要件 §14.2 の `start` 例に `enableInterimTranslation` を追加している（要件 §13.4 のモードをプロトコルで制御するため）。サーバー側で省略時は `false`。
+> 要件 §14.2 の `start` 例に `enableInterimTranslation` を追加している（要件 §13.4 のモードをプロトコルで制御するため）。フロント型は必須・サーバーschemaは optional（省略時 false）という実態（bd-simple-translator-mgk）。
 
 ### `audio`（音声チャンク）
 

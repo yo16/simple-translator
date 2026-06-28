@@ -208,16 +208,16 @@ WebSocketサーバーはGCP APIとの接続を担当する。
 
 1. ユーザーが入力言語を選択する
 2. ユーザーが出力言語を選択する
-3. ユーザーが接続ボタンを押す
-4. ユーザーが録音開始ボタンを押す
-5. ユーザーが短く話す
-6. 音声がサーバーへ逐次送信される
-7. 認識途中結果が画面に表示される
-8. 発話区切りが確定する
-9. 確定した発話が翻訳される
-10. 翻訳テキストが画面に表示される
-11. 翻訳音声が再生される
-12. ユーザーが次の発話を行う
+3. ユーザーが「開始」ボタンを押す（WebSocket接続→接続確立で start送信＋録音開始を一括実行、bd-simple-translator-mgk）
+4. ユーザーが短く話す
+5. 音声がサーバーへ逐次送信される
+6. 認識途中結果が画面に表示される
+7. 発話区切りが確定する
+8. 確定した発話が翻訳される
+9. 翻訳テキストが画面に表示される
+10. 翻訳音声が再生される
+11. ユーザーが次の発話を行う
+12. ユーザーが「停止」ボタンを押す（stop送信＋録音停止＋WS切断を一括実行）
 
 ## 10.2 想定する会話テンポ
 
@@ -247,10 +247,9 @@ MVPでは厳密な秒数保証は不要とする。
 
 * 入力言語選択
 * 出力言語選択
-* 接続ボタン
-* 切断ボタン
-* 録音開始ボタン
-* 録音停止ボタン
+* 「開始」ボタン（接続＋start送信＋録音開始を一括実行、bd-simple-translator-mgk）
+* 「停止」ボタン（stop送信＋録音停止＋WS切断を一括実行）
+* 「手動で発話を区切る」ボタン（commit送信）
 * 認識途中テキスト表示欄
 * 認識確定テキスト表示欄
 * 翻訳テキスト表示欄
@@ -285,16 +284,10 @@ MVPではMediaRecorder APIを使用してよい。
 録音中、短い間隔で音声チャンクを生成し、WebSocketで
 サーバーへ送信する。
 
-初期値は以下のいずれかとする。
+初期値は以下とする（実装の既定に合わせる、bd-simple-translator-mgk）。
 
 ```text
-500msごと
-```
-
-または
-
-```text
-1000msごと
+250msごと（既定）
 ```
 
 チャンク間隔は設定値として変更できるようにする。
@@ -389,7 +382,8 @@ ws://localhost:3001/ws
   "sourceLanguage": "ja-JP",
   "targetLanguage": "en-US",
   "enableTts": true,
-  "chunkMs": 500,
+  "enableInterimTranslation": false,
+  "chunkMs": 250,
   "silenceMs": 1000,
   "maxChars": 80,
   "maxSeconds": 10
@@ -608,20 +602,16 @@ Google Cloud client librariesは、ローカルWebSocketサーバー側で
 
 ## 18. 環境変数
 
-必要最小限の環境変数のみ使用する。
+必要最小限の環境変数のみ使用する。実装で実際に読まれるのは以下のみ（bd-simple-translator-mgk で同期）。
 
 ```text
 GOOGLE_CLOUD_PROJECT=
 WS_PORT=3001
-DEFAULT_SOURCE_LANGUAGE=ja-JP
-DEFAULT_TARGET_LANGUAGE=en-US
 ENABLE_TTS=true
-ENABLE_INTERIM_TRANSLATION=false
-DEFAULT_CHUNK_MS=500
-DEFAULT_SILENCE_MS=1000
-DEFAULT_MAX_CHARS=80
-DEFAULT_MAX_SECONDS=10
+NEXT_PUBLIC_WS_URL=ws://localhost:3001/ws
 ```
+
+これら以外の既定値（言語・interim翻訳・chunkMs・silenceMs・maxChars・maxSeconds）はクライアントの `DEFAULT_SETTINGS` にハードコードしており、環境変数化は MVP では行わない（bd-simple-translator-mgk）。
 
 ## 19. ディレクトリ構成
 

@@ -75,6 +75,14 @@ gcloud auth application-default login
 
 ブラウザが開いたら Google アカウントでログインし、権限を付与します。
 
+続けて、ADC に **quota project（課金・割り当てプロジェクト）** を設定します。**これを設定しないと Speech-to-Text などの呼び出しが `PERMISSION_DENIED`（quota project が未設定）で失敗します。** `<PROJECT_ID>` は `.env.local` の `GOOGLE_CLOUD_PROJECT` と同じ値です。
+
+```powershell
+gcloud auth application-default set-quota-project <PROJECT_ID>
+```
+
+> 「Service Usage API が無効」と表示された場合は、先に `gcloud services enable serviceusage.googleapis.com --project <PROJECT_ID>` を実行してから再度設定してください。
+
 > **注意**: GCP 認証情報はローカル WebSocket サーバープロセスのみが使用します。ブラウザ側には認証情報を一切渡しません。GCP 関連の環境変数（`GOOGLE_CLOUD_PROJECT` 等）に `NEXT_PUBLIC_` プレフィックスを付けないでください。
 
 ### 2. 依存パッケージのインストール
@@ -103,15 +111,10 @@ notepad .env.local
 |---|---|---|
 | `GOOGLE_CLOUD_PROJECT` | （空・要設定） | GCP プロジェクト ID。必須。 |
 | `WS_PORT` | `3001` | WebSocket サーバーのポート番号 |
-| `DEFAULT_SOURCE_LANGUAGE` | `ja-JP` | 音声認識のデフォルト入力言語 |
-| `DEFAULT_TARGET_LANGUAGE` | `en-US` | 翻訳のデフォルト出力言語 |
 | `ENABLE_TTS` | `true` | Text-to-Speech の有効/無効 |
-| `ENABLE_INTERIM_TRANSLATION` | `false` | 認識途中結果の仮翻訳の有効/無効（調査用。通常は `false`） |
-| `DEFAULT_CHUNK_MS` | `500` | 音声チャンク送信間隔（ミリ秒） |
-| `DEFAULT_SILENCE_MS` | `1000` | 発話区切り判定の無音時間しきい値（ミリ秒） |
-| `DEFAULT_MAX_CHARS` | `80` | 発話区切り判定の最大文字数 |
-| `DEFAULT_MAX_SECONDS` | `10` | 発話区切り判定の最大秒数 |
 | `NEXT_PUBLIC_WS_URL` | `ws://localhost:3001/ws` | フロントエンドの WebSocket 接続先 URL |
+
+> 言語ペアや発話区切りのしきい値（無音時間・最大文字数・最大秒数・音声チャンク間隔など）の既定値はクライアントの `DEFAULT_SETTINGS`（`src/components/TranslatorApp.tsx`）に固定されており、環境変数では変更しません。実行中は画面の設定パネルで調整できます。
 
 > `.env.local` はコミットしません（`.gitignore` で除外済み）。`.env.local.example` のみリポジトリに含まれています。
 
@@ -135,11 +138,11 @@ npm run dev
 ## 動作確認
 
 1. ブラウザで `http://localhost:3000` を開く
-2. 入力言語・出力言語を選択する（日本語 ⇔ 英語）
-3. 「接続」ボタンを押して WebSocket サーバーに接続する
-4. 「録音開始」ボタンを押してマイクへの権限を許可し、話す
-5. 画面に認識途中テキストが表示されることを確認する
-6. 発話後、少し待つと翻訳テキストが表示され、翻訳音声が再生されることを確認する
+2. 「言語を入れ替える」ボタンで翻訳方向を選ぶ（日本語 ⇔ 英語）
+3. 「開始」ボタンを押す（WebSocket 接続〜録音開始まで一括で行われる）。マイクへの権限を求められたら許可する
+4. 話すと、画面に認識途中テキスト（淡色イタリック）が表示される
+5. 発話後に少し黙ると発話が確定し、翻訳テキストの表示と翻訳音声の再生が行われる（即時に確定させたいときは「手動で発話を区切る」ボタンを押す）
+6. 「停止」ボタンで録音・接続を終了する
 
 ---
 

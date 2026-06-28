@@ -67,15 +67,10 @@ gcloud auth application-default login
 |---|---|---|---|
 | `GOOGLE_CLOUD_PROJECT` | （要設定） | サーバー | **不可** |
 | `WS_PORT` | `3001` | サーバー | 不可 |
-| `DEFAULT_SOURCE_LANGUAGE` | `ja-JP` | サーバー（既定値配布） | 不可 |
-| `DEFAULT_TARGET_LANGUAGE` | `en-US` | サーバー | 不可 |
 | `ENABLE_TTS` | `true` | サーバー | 不可 |
-| `ENABLE_INTERIM_TRANSLATION` | `false` | サーバー | 不可 |
-| `DEFAULT_CHUNK_MS` | `500` | サーバー | 不可 |
-| `DEFAULT_SILENCE_MS` | `1000` | サーバー | 不可 |
-| `DEFAULT_MAX_CHARS` | `80` | サーバー | 不可 |
-| `DEFAULT_MAX_SECONDS` | `10` | サーバー | 不可 |
 | `NEXT_PUBLIC_WS_URL` | `ws://localhost:3001/ws` | クライアント | 可（接続先URLのみ） |
+
+> 言語ペア・発話区切りのしきい値（チャンク間隔・無音時間・最大文字数・最大秒数など）は環境変数化せず、クライアントの `DEFAULT_SETTINGS` に既定値を固定する（bd-simple-translator-mgk）。
 
 ### NEXT_PUBLIC_ の取り扱い（厳守）
 

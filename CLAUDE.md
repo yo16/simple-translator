@@ -211,10 +211,10 @@ Media Translation API は使用しない。
 ## プロジェクト固有ルール
 
 - **GCP認証情報をクライアント（ブラウザ）側に含めない。** GCP client library はローカル WebSocket サーバー側でのみ使用する。
-- 翻訳・音声合成は、原則として確定した発話区切り単位で行う。interim result は画面表示のみに使い、初期状態では翻訳しない（`ENABLE_INTERIM_TRANSLATION=false`）。
+- 翻訳・音声合成は、原則として確定した発話区切り単位で行う。interim result は画面表示のみに使い、翻訳しない（既定 `enableInterimTranslation=false`。interim 翻訳経路は MVP では未実装）。
 - Text-to-Speech は確定済みの発話区切りだけを対象にする（未確定の interim / 仮翻訳は音声出力しない）。
 - 発話区切りの初期値: 無音 1.0秒 / 確定テキスト 80文字 / 同一発話 10秒 / 手動 commit / stop。数値は設定で変更可能にする。
 - 対応言語は MVP では日本語・英語のみ（ja-JP→en-US、en-US→ja-JP）。
-- 環境変数は最小限（`GOOGLE_CLOUD_PROJECT`, `WS_PORT`, `DEFAULT_SOURCE_LANGUAGE`, `DEFAULT_TARGET_LANGUAGE`, `ENABLE_TTS`, `ENABLE_INTERIM_TRANSLATION`, `DEFAULT_CHUNK_MS`, `DEFAULT_SILENCE_MS`, `DEFAULT_MAX_CHARS`, `DEFAULT_MAX_SECONDS`）。`.env.local.example` を用意し、`.env*` はコミットしない。
+- 環境変数は最小限（`GOOGLE_CLOUD_PROJECT`, `WS_PORT`, `ENABLE_TTS`, `NEXT_PUBLIC_WS_URL`）。その他の言語・発話区切りの既定値はクライアントの `DEFAULT_SETTINGS` にハードコードし、環境変数化は行わない（bd-simple-translator-mgk）。`.env.local.example` を用意し、`.env*` はコミットしない。
 - Windows 環境でのローカル起動手順と GCP 認証設定を README に記載する。
 - 本番運用の作り込みはしない（技術調査が目的）。低遅延化よりも自然に意味が通る翻訳を優先する。
