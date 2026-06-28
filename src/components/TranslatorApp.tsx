@@ -20,7 +20,7 @@ import { useWebSocketWithAudio } from "../hooks/useWebSocket";
 import { useRecorder } from "../hooks/useRecorder";
 import { useAudioQueue } from "../hooks/useAudioQueue";
 import type { PlaybackStartInfo } from "../hooks/useAudioQueue";
-import type { AppAction, Settings } from "../lib/types";
+import type { AppAction, Settings, SupportedLanguage } from "../lib/types";
 import { Recorder } from "./Recorder";
 import { LanguageSelector } from "./LanguageSelector";
 import { TranscriptView } from "./TranscriptView";
@@ -225,7 +225,15 @@ export function TranslatorApp() {
     [],
   );
 
-  const handleLanguagePairToggle = useCallback(() => {
+  const handleSourceChange = useCallback((lang: SupportedLanguage) => {
+    setSettings((prev) => ({ ...prev, sourceLanguage: lang }));
+  }, []);
+
+  const handleTargetChange = useCallback((lang: SupportedLanguage) => {
+    setSettings((prev) => ({ ...prev, targetLanguage: lang }));
+  }, []);
+
+  const handleLanguagePairSwap = useCallback(() => {
     setSettings((prev) => ({
       ...prev,
       sourceLanguage: prev.targetLanguage,
@@ -243,7 +251,9 @@ export function TranslatorApp() {
         sourceLanguage={settings.sourceLanguage}
         targetLanguage={settings.targetLanguage}
         status={state.status}
-        onToggle={handleLanguagePairToggle}
+        onSourceChange={handleSourceChange}
+        onTargetChange={handleTargetChange}
+        onSwap={handleLanguagePairSwap}
       />
 
       <Recorder
