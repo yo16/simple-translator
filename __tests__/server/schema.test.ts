@@ -272,9 +272,9 @@ describe("startSchema — 必須フィールド欠落・型不正", () => {
     expect(result.success).toBe(false);
   });
 
-  test("sourceLanguage が不正な言語コード（zh-CN）のとき拒否される", () => {
-    // Arrange
-    const input = { ...validStart, sourceLanguage: "zh-CN" };
+  test("sourceLanguage が未対応の言語コード（xx-XX）のとき拒否される", () => {
+    // Arrange: zh-CN は有効化されたため xx-XX（架空コード）で検証する
+    const input = { ...validStart, sourceLanguage: "xx-XX" };
 
     // Act
     const result = clientMessageSchema.safeParse(input);
@@ -283,8 +283,8 @@ describe("startSchema — 必須フィールド欠落・型不正", () => {
     expect(result.success).toBe(false);
   });
 
-  test("targetLanguage が不正な言語コード（fr-FR）のとき拒否される", () => {
-    // Arrange
+  test("targetLanguage が未対応の言語コード（fr-FR）のとき拒否される", () => {
+    // Arrange: fr-FR は第2陣未実装のため引き続き不正コードとして機能する
     const input = { ...validStart, targetLanguage: "fr-FR" };
 
     // Act
@@ -516,6 +516,182 @@ describe("境界値テスト", () => {
 // ---------------------------------------------------------------------------
 // 8. startSchema 単体のテスト（同一言語ペアは拒否されないことを確認）
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 9. 新規言語コード（zh-CN / zh-TW / ko-KR）の受理テスト
+// ---------------------------------------------------------------------------
+describe("LanguageEnum / start — 新規言語コードの受理", () => {
+  test("sourceLanguage が zh-CN のとき受理される", () => {
+    // Arrange: zh-CN → en-US（異なる言語ペア）
+    const input = {
+      ...validStart,
+      sourceLanguage: "zh-CN" as const,
+      targetLanguage: "en-US" as const,
+    };
+
+    // Act
+    const result = clientMessageSchema.safeParse(input);
+
+    // Assert
+    expect(result.success).toBe(true);
+  });
+
+  test("targetLanguage が zh-CN のとき受理される", () => {
+    // Arrange: ja-JP → zh-CN
+    const input = {
+      ...validStart,
+      sourceLanguage: "ja-JP" as const,
+      targetLanguage: "zh-CN" as const,
+    };
+
+    // Act
+    const result = clientMessageSchema.safeParse(input);
+
+    // Assert
+    expect(result.success).toBe(true);
+  });
+
+  test("sourceLanguage が zh-TW のとき受理される", () => {
+    // Arrange: zh-TW → en-US
+    const input = {
+      ...validStart,
+      sourceLanguage: "zh-TW" as const,
+      targetLanguage: "en-US" as const,
+    };
+
+    // Act
+    const result = clientMessageSchema.safeParse(input);
+
+    // Assert
+    expect(result.success).toBe(true);
+  });
+
+  test("targetLanguage が zh-TW のとき受理される", () => {
+    // Arrange: ja-JP → zh-TW
+    const input = {
+      ...validStart,
+      sourceLanguage: "ja-JP" as const,
+      targetLanguage: "zh-TW" as const,
+    };
+
+    // Act
+    const result = clientMessageSchema.safeParse(input);
+
+    // Assert
+    expect(result.success).toBe(true);
+  });
+
+  test("sourceLanguage が ko-KR のとき受理される", () => {
+    // Arrange: ko-KR → en-US
+    const input = {
+      ...validStart,
+      sourceLanguage: "ko-KR" as const,
+      targetLanguage: "en-US" as const,
+    };
+
+    // Act
+    const result = clientMessageSchema.safeParse(input);
+
+    // Assert
+    expect(result.success).toBe(true);
+  });
+
+  test("targetLanguage が ko-KR のとき受理される", () => {
+    // Arrange: ja-JP → ko-KR
+    const input = {
+      ...validStart,
+      sourceLanguage: "ja-JP" as const,
+      targetLanguage: "ko-KR" as const,
+    };
+
+    // Act
+    const result = clientMessageSchema.safeParse(input);
+
+    // Assert
+    expect(result.success).toBe(true);
+  });
+
+  test("zh-CN → zh-TW（異なる言語ペア）は受理される", () => {
+    // Arrange
+    const input = {
+      ...validStart,
+      sourceLanguage: "zh-CN" as const,
+      targetLanguage: "zh-TW" as const,
+    };
+
+    // Act
+    const result = clientMessageSchema.safeParse(input);
+
+    // Assert
+    expect(result.success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. 同一言語ペア拒否の回帰テスト（新規言語）
+// ---------------------------------------------------------------------------
+describe("clientMessageSchema — 新規言語での同一言語ペア拒否（回帰）", () => {
+  test("sourceLanguage === targetLanguage (zh-CN / zh-CN) でバリデーションエラーになる", () => {
+    // Arrange
+    const input = {
+      ...validStart,
+      sourceLanguage: "zh-CN" as const,
+      targetLanguage: "zh-CN" as const,
+    };
+
+    // Act
+    const result = clientMessageSchema.safeParse(input);
+
+    // Assert
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join("."));
+      expect(paths).toContain("targetLanguage");
+    }
+  });
+
+  test("sourceLanguage === targetLanguage (zh-TW / zh-TW) でバリデーションエラーになる", () => {
+    // Arrange
+    const input = {
+      ...validStart,
+      sourceLanguage: "zh-TW" as const,
+      targetLanguage: "zh-TW" as const,
+    };
+
+    // Act
+    const result = clientMessageSchema.safeParse(input);
+
+    // Assert
+    expect(result.success).toBe(false);
+  });
+
+  test("sourceLanguage === targetLanguage (ko-KR / ko-KR) でバリデーションエラーになる", () => {
+    // Arrange
+    const input = {
+      ...validStart,
+      sourceLanguage: "ko-KR" as const,
+      targetLanguage: "ko-KR" as const,
+    };
+
+    // Act
+    const result = clientMessageSchema.safeParse(input);
+
+    // Assert
+    expect(result.success).toBe(false);
+  });
+
+  test("sourceLanguage が 'xx-XX'（架空コード）のとき拒否される", () => {
+    // Arrange: 明らかな不正値を使って未対応コード拒否を確認する
+    const input = { ...validStart, sourceLanguage: "xx-XX" };
+
+    // Act
+    const result = clientMessageSchema.safeParse(input);
+
+    // Assert
+    expect(result.success).toBe(false);
+  });
+});
+
+
 describe("startSchema 単体 — 同一言語ペアは拒否されない", () => {
   test("startSchema 単体では sourceLanguage === targetLanguage でもエラーにならない", () => {
     // Arrange: startSchema 単体には同一言語ペアの制約がない
