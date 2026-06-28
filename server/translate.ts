@@ -1,4 +1,6 @@
 import { v2 } from "@google-cloud/translate";
+import { SupportedLanguage } from "./types";
+import { translationCodeOf } from "./languages";
 
 // ============================================================
 // Cloud Translation v2 Basic ラッパー
@@ -47,23 +49,6 @@ export function resetTranslateClient(): void {
 }
 
 // ============================================================
-// 言語コード変換
-// ============================================================
-
-/**
- * プロトコル言語コード（例: "ja-JP", "en-US"）を
- * Cloud Translation v2 Basic API 用の2文字コード（例: "ja", "en"）へ変換する。
- *
- * "-" で分割して先頭部分を返す。既に2文字コード（"ja", "en"）の場合もそのまま返る。
- *
- * @param code プロトコル言語コード（例: "ja-JP", "en-US", "ja"）
- * @returns Translation API 用の言語コード（例: "ja", "en"）
- */
-export function toTranslationLangCode(code: string): string {
-  return code.split("-")[0];
-}
-
-// ============================================================
 // 翻訳関数
 // ============================================================
 
@@ -71,21 +56,21 @@ export function toTranslationLangCode(code: string): string {
  * テキストを翻訳する。
  *
  * - 空文字列（または空白のみ）を渡した場合は API を呼ばずに空文字列を返す。
- * - 言語コードは `ja-JP` / `en-US` 形式で受け取り、内部で2文字コード（`ja` / `en`）へ
- *   変換してから Translation API の `from` / `to` に渡す。
+ * - 言語コードは SupportedLanguage 型で受け取り、レジストリの translationCode を
+ *   Translation API の `from` / `to` に渡す（zh-CN / zh-TW を簡繁区別するため）。
  * - client 引数を指定した場合はそのインスタンスを使用する（テスト注入用）。
  *   省略時は getTranslateClient() が返すシングルトンを使用する。
  *
  * @param text 翻訳対象のテキスト
- * @param sourceLanguage 翻訳元言語コード（例: "ja-JP", "en-US"）
- * @param targetLanguage 翻訳先言語コード（例: "ja-JP", "en-US"）
+ * @param sourceLanguage 翻訳元言語（SupportedLanguage: "ja-JP" / "en-US" / "zh-CN" / "zh-TW" / "ko-KR"）
+ * @param targetLanguage 翻訳先言語（SupportedLanguage: "ja-JP" / "en-US" / "zh-CN" / "zh-TW" / "ko-KR"）
  * @param client テスト用クライアント注入（省略可）
  * @returns 翻訳結果テキスト
  */
 export async function translate(
   text: string,
-  sourceLanguage: string,
-  targetLanguage: string,
+  sourceLanguage: SupportedLanguage,
+  targetLanguage: SupportedLanguage,
   client?: v2.Translate
 ): Promise<string> {
   // 空文字列・空白のみの場合は早期リターン（API呼び出しなし）
@@ -95,9 +80,10 @@ export async function translate(
 
   const translateClient = client ?? getTranslateClient();
 
-  // プロトコル言語コード（ja-JP / en-US）を Translation API 用2文字コード（ja / en）へ変換
-  const from = toTranslationLangCode(sourceLanguage);
-  const to = toTranslationLangCode(targetLanguage);
+  // レジストリの translationCode を使って Translation API の from/to を決める
+  // （split("-")[0] 方式では zh-CN / zh-TW を区別できないため使用しない）
+  const from = translationCodeOf(sourceLanguage);
+  const to = translationCodeOf(targetLanguage);
 
   try {
     const [translated] = await translateClient.translate(text, {

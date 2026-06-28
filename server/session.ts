@@ -12,6 +12,7 @@ import { UtteranceBufferManager } from "./utteranceBuffer";
 import { createSpeechStream } from "./speechStream";
 import { translate } from "./translate";
 import { synthesize, isTtsEnabled } from "./textToSpeech";
+import { sttCodeOf } from "./languages";
 
 // ============================================================
 // Session クラス
@@ -193,7 +194,7 @@ export class Session {
       const sourceLanguage = this.state.config.sourceLanguage;
 
       const speechHandle = createSpeechStream({
-        languageCode: sourceLanguage, // フルコード（"ja-JP" / "en-US"）のまま渡す
+        languageCode: sttCodeOf(sourceLanguage), // レジストリの sttCode を解決して渡す（例: zh-CN → cmn-Hans-CN）
         onInterim: (text: string) => {
           // 表示専用: transcript_interim を送信（翻訳・TTS は行わない）
           this.send({ type: "transcript_interim", text });

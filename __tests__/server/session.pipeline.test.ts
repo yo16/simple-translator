@@ -26,6 +26,7 @@
 import WebSocket from "ws";
 import { Session } from "../../server/session";
 import { ClientMessage } from "../../server/schema";
+import { SupportedLanguage } from "../../server/types";
 
 // ---------------------------------------------------------------------------
 // モック化: translate / textToSpeech / speechStream
@@ -76,17 +77,21 @@ function getSentMessages(mockWs: ReturnType<typeof createMockWs>): Record<string
 // silenceMs / maxSeconds は大きめにして意図しないタイマー発火を防ぐ
 // ---------------------------------------------------------------------------
 function makeStartMsg(overrides: Partial<{
-  sourceLanguage: "ja-JP" | "en-US";
-  targetLanguage: "ja-JP" | "en-US";
+  sourceLanguage: SupportedLanguage;
+  targetLanguage: SupportedLanguage;
   enableTts: boolean;
   silenceMs: number;
   maxChars: number;
   maxSeconds: number;
 }> = {}): ClientMessage {
+  const sourceLanguage = overrides.sourceLanguage ?? "ja-JP";
+  // sourceLanguage と targetLanguage が同一だとスキーマ検証エラーになるため、
+  // sourceLanguage に応じたデフォルト targetLanguage を設定する
+  const defaultTarget: SupportedLanguage = sourceLanguage === "en-US" ? "ja-JP" : "en-US";
   return {
     type: "start",
-    sourceLanguage: overrides.sourceLanguage ?? "ja-JP",
-    targetLanguage: overrides.targetLanguage ?? "en-US",
+    sourceLanguage,
+    targetLanguage: overrides.targetLanguage ?? defaultTarget,
     enableTts: overrides.enableTts ?? true,
     enableInterimTranslation: false,
     chunkMs: 250,
@@ -871,5 +876,181 @@ describe("セキュリティ — パイプラインエラーの内容", () => {
     expect(messageText).not.toContain("node_modules");
 
     session.dispose();
+  });
+});
+
+// ===========================================================================
+// 10. 多言語パイプライン検証（c2n.3）
+//     zh-CN / zh-TW の場合に translate / synthesize が正しい引数で呼ばれること
+// ===========================================================================
+describe("多言語パイプライン — zh-CN / zh-TW で正しい SupportedLanguage コードが渡る（c2n.3）", () => {
+  test("zh-CN→en-US: translate が ('発話', 'zh-CN', 'en-US') で呼ばれる", async () => {
+    // Arrange
+    mockTranslate.mockResolvedValue("Hello from Chinese");
+    mockIsTtsEnabled.mockReturnValue(false);
+
+    const mockWs = createMockWs();
+    const session = new Session(mockWs as unknown as WebSocket);
+    session.handleMessage(makeStartMsg({
+      sourceLanguage: "zh-CN",
+      targetLanguage: "en-US",
+      enableTts: false,
+    }));
+    session.addFinalToBuffer("你好世界");
+
+    // Act
+    session.handleMessage({ type: "commit" });
+    await flushPromises();
+
+    // Assert: translate に SupportedLanguage コードがそのまま渡ること
+    expect(mockTranslate).toHaveBeenCalledWith("你好世界", "zh-CN", "en-US");
+
+    session.dispose();
+  });
+
+  test("en-US→zh-TW: translate が ('Hello', 'en-US', 'zh-TW') で呼ばれる", async () => {
+    // Arrange
+    mockTranslate.mockResolvedValue("你好");
+    mockIsTtsEnabled.mockReturnValue(false);
+
+    const mockWs = createMockWs();
+    const session = new Session(mockWs as unknown as WebSocket);
+    session.handleMessage(makeStartMsg({
+      sourceLanguage: "en-US",
+      targetLanguage: "zh-TW",
+      enableTts: false,
+    }));
+    session.addFinalToBuffer("Hello world");
+
+    // Act
+    session.handleMessage({ type: "commit" });
+    await flushPromises();
+
+    // Assert
+    expect(mockTranslate).toHaveBeenCalledWith("Hello world", "en-US", "zh-TW");
+
+    session.dispose();
+  });
+
+  test("zh-CN→en-US (TTS有効): synthesize が (翻訳後テキスト, 'en-US') で呼ばれる", async () => {
+    // Arrange
+    const translatedText = "Hello from Chinese";
+    mockTranslate.mockResolvedValue(translatedText);
+    mockIsTtsEnabled.mockReturnValue(true);
+    mockSynthesize.mockResolvedValue("audioBase64");
+
+    const mockWs = createMockWs();
+    const session = new Session(mockWs as unknown as WebSocket);
+    session.handleMessage(makeStartMsg({
+      sourceLanguage: "zh-CN",
+      targetLanguage: "en-US",
+      enableTts: true,
+    }));
+    session.addFinalToBuffer("你好");
+
+    // Act
+    session.handleMessage({ type: "commit" });
+    await flushPromises();
+
+    // Assert: synthesize が翻訳後テキストとターゲット言語 'en-US' で呼ばれること
+    expect(mockSynthesize).toHaveBeenCalledWith(translatedText, "en-US");
+
+    session.dispose();
+  });
+
+  test("ja-JP→zh-CN (TTS有効): synthesize が (翻訳後テキスト, 'zh-CN') で呼ばれる", async () => {
+    // Arrange
+    const translatedText = "你好";
+    mockTranslate.mockResolvedValue(translatedText);
+    mockIsTtsEnabled.mockReturnValue(true);
+    mockSynthesize.mockResolvedValue("audioBase64");
+
+    const mockWs = createMockWs();
+    const session = new Session(mockWs as unknown as WebSocket);
+    session.handleMessage(makeStartMsg({
+      sourceLanguage: "ja-JP",
+      targetLanguage: "zh-CN",
+      enableTts: true,
+    }));
+    session.addFinalToBuffer("こんにちは");
+
+    // Act
+    session.handleMessage({ type: "commit" });
+    await flushPromises();
+
+    // Assert: synthesize が 'zh-CN' で呼ばれること（ttsLanguageCode への変換は synthesize 内部）
+    expect(mockSynthesize).toHaveBeenCalledWith(translatedText, "zh-CN");
+
+    session.dispose();
+  });
+
+  test("en-US→zh-TW (TTS有効): synthesize が (翻訳後テキスト, 'zh-TW') で呼ばれる", async () => {
+    // Arrange
+    const translatedText = "你好（繁體）";
+    mockTranslate.mockResolvedValue(translatedText);
+    mockIsTtsEnabled.mockReturnValue(true);
+    mockSynthesize.mockResolvedValue("audioBase64");
+
+    const mockWs = createMockWs();
+    const session = new Session(mockWs as unknown as WebSocket);
+    session.handleMessage(makeStartMsg({
+      sourceLanguage: "en-US",
+      targetLanguage: "zh-TW",
+      enableTts: true,
+    }));
+    session.addFinalToBuffer("Hello");
+
+    // Act
+    session.handleMessage({ type: "commit" });
+    await flushPromises();
+
+    // Assert: synthesize が翻訳後テキストとターゲット言語 'zh-TW' で呼ばれること
+    expect(mockSynthesize).toHaveBeenCalledWith(translatedText, "zh-TW");
+
+    session.dispose();
+  });
+
+  test("zh-CN と zh-TW で translate に渡る targetLanguage が異なること（区別されていること）", async () => {
+    // Arrange
+    mockTranslate.mockResolvedValue("translated");
+    mockIsTtsEnabled.mockReturnValue(false);
+
+    const mockWsCN = createMockWs();
+    const sessionCN = new Session(mockWsCN as unknown as WebSocket);
+    sessionCN.handleMessage(makeStartMsg({
+      sourceLanguage: "en-US",
+      targetLanguage: "zh-CN",
+      enableTts: false,
+    }));
+    sessionCN.addFinalToBuffer("Hello");
+    sessionCN.handleMessage({ type: "commit" });
+    await flushPromises();
+
+    const targetCN = (mockTranslate.mock.calls[0][2] as string);
+
+    jest.clearAllMocks();
+    mockTranslate.mockResolvedValue("translated");
+    mockIsTtsEnabled.mockReturnValue(false);
+
+    const mockWsTW = createMockWs();
+    const sessionTW = new Session(mockWsTW as unknown as WebSocket);
+    sessionTW.handleMessage(makeStartMsg({
+      sourceLanguage: "en-US",
+      targetLanguage: "zh-TW",
+      enableTts: false,
+    }));
+    sessionTW.addFinalToBuffer("Hello");
+    sessionTW.handleMessage({ type: "commit" });
+    await flushPromises();
+
+    const targetTW = (mockTranslate.mock.calls[0][2] as string);
+
+    // Assert: zh-CN と zh-TW で translate の第3引数（targetLanguage）が異なること
+    expect(targetCN).toBe("zh-CN");
+    expect(targetTW).toBe("zh-TW");
+    expect(targetCN).not.toBe(targetTW);
+
+    sessionCN.dispose();
+    sessionTW.dispose();
   });
 });
