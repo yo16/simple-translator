@@ -1,4 +1,6 @@
 import { TextToSpeechClient } from "@google-cloud/text-to-speech";
+import { SupportedLanguage } from "./types";
+import { getLanguageEntry } from "./languages";
 
 // ============================================================
 // Cloud Text-to-Speech ラッパー
@@ -77,18 +79,20 @@ export function isTtsEnabled(): boolean {
  *
  * - ENABLE_TTS=false（または "false"）の場合は API を呼ばずに null を返す。
  * - 合成結果は base64 文字列として返す（WebSocket の `audio` メッセージの `data` フィールドに直接使用可能）。
- * - `voice.languageCode` はフルコード（"ja-JP" / "en-US"）のまま渡す（2文字への変換は行わない）。
+ * - voice 設定はレジストリの ttsLanguageCode / ttsGender を使う。
+ *   ttsVoiceName が定義されている場合のみ name フィールドを含める
+ *   （ja-JP / en-US は ttsVoiceName が undefined のため name を含めない。既存挙動を保持）。
  * - client 引数を指定した場合はそのインスタンスを使用する（テスト注入用）。
  *   省略時は getTtsClient() が返すシングルトンを使用する。
  *
  * @param text 合成対象のテキスト
- * @param languageCode 音声の言語コード（例: "ja-JP", "en-US"。フルコードのまま渡す）
+ * @param targetLanguage ターゲット言語（SupportedLanguage: "ja-JP" / "en-US" / "zh-CN" / "zh-TW" / "ko-KR"）
  * @param client テスト用クライアント注入（省略可）
  * @returns 合成音声の base64 文字列（TTS 無効時・空テキスト時は null）
  */
 export async function synthesize(
   text: string,
-  languageCode: string,
+  targetLanguage: SupportedLanguage,
   client?: TextToSpeechClient
 ): Promise<string | null> {
   // ENABLE_TTS=false の場合は API を呼ばずに null を返す
@@ -103,14 +107,28 @@ export async function synthesize(
 
   const ttsClient = client ?? getTtsClient();
 
+  // レジストリからターゲット言語のTTS設定を取得する
+  const entry = getLanguageEntry(targetLanguage);
+
+  // voice オブジェクトを組み立てる。
+  // ttsVoiceName が定義されている場合のみ name を含める
+  // （ja-JP / en-US は ttsVoiceName が undefined のため name フィールドを含めない）
+  const voice: {
+    languageCode: string;
+    ssmlGender: "NEUTRAL" | "MALE" | "FEMALE";
+    name?: string;
+  } = {
+    languageCode: entry.ttsLanguageCode,
+    ssmlGender: entry.ttsGender,
+  };
+  if (entry.ttsVoiceName !== undefined) {
+    voice.name = entry.ttsVoiceName;
+  }
+
   try {
     const [response] = await ttsClient.synthesizeSpeech({
       input: { text },
-      voice: {
-        // フルコード（"ja-JP" / "en-US"）のまま渡す。2文字変換は行わない
-        languageCode,
-        ssmlGender: "NEUTRAL",
-      },
+      voice,
       audioConfig: {
         audioEncoding: "MP3",
       },

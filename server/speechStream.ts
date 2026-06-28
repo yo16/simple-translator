@@ -51,7 +51,7 @@ export function resetSpeechClient(): void {
 // ============================================================
 
 export interface SpeechStreamOptions {
-  /** 認識言語コード。フルコード（"ja-JP" / "en-US"）のまま渡す。2文字変換は行わない。 */
+  /** 認識言語コード。呼び出し側（session.ts）で sttCodeOf(sourceLanguage) を使って解決済みの STT コードを渡す。 */
   languageCode: string;
   /** interim 認識結果のコールバック */
   onInterim: (text: string) => void;
@@ -73,7 +73,7 @@ export interface SpeechStreamOptions {
  * Cloud Speech-to-Text Streaming ストリームを生成し、ハンドルを返す。
  *
  * - `streamingRecognize` に WEBM_OPUS / 48000Hz / interimResults:true を設定する。
- * - languageCode はフルコード（"ja-JP" / "en-US"）のまま渡す（2文字変換しない）。
+ * - languageCode はレジストリの sttCode を受け取る（呼び出し側で sttCodeOf(sourceLanguage) を使って解決する）。
  * - ストリームはセッション中切り直さない（WebM/Opus コンテナヘッダは最初のチャンクのみに含まれるため）。
  * - STT 時間上限到達時は onError("Speech recognition stream timed out...", false) で通知する（MVP方針）。
  *
