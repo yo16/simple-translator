@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { SUPPORTED_LANGUAGES } from "./types";
 
-const LanguageEnum = z.enum(["ja-JP", "en-US"]);
+const LanguageEnum = z.enum(SUPPORTED_LANGUAGES);
 
 export const startSchema = z.object({
   type: z.literal("start"),

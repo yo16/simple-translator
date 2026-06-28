@@ -2,7 +2,15 @@
 // 共通
 // ============================================================
 
-export type SupportedLanguage = "ja-JP" | "en-US";
+export const SUPPORTED_LANGUAGES = [
+  "ja-JP",
+  "en-US",
+  "zh-CN",
+  "zh-TW",
+  "ko-KR",
+] as const;
+
+export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
 export type UtteranceCommitReason =
   | "silence"
