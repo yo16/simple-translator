@@ -159,17 +159,11 @@ describe('環境変数の整合性', () => {
   });
 
   // 個別変数の存在確認（必須変数）
+  // 実装で実際に使用する環境変数のみ（bd-simple-translator-mgk: 未使用の DEFAULT_* 系を削除）
   const requiredVarNames = [
     'GOOGLE_CLOUD_PROJECT',
     'WS_PORT',
-    'DEFAULT_SOURCE_LANGUAGE',
-    'DEFAULT_TARGET_LANGUAGE',
     'ENABLE_TTS',
-    'ENABLE_INTERIM_TRANSLATION',
-    'DEFAULT_CHUNK_MS',
-    'DEFAULT_SILENCE_MS',
-    'DEFAULT_MAX_CHARS',
-    'DEFAULT_MAX_SECONDS',
     'NEXT_PUBLIC_WS_URL',
   ];
 

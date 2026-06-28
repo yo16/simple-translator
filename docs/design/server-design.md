@@ -74,6 +74,7 @@ tsx --watch server/index.ts
   → Session 生成（未初期化）
 [recv start]
   → パラメータ確定 / STTストリーム開始 / 発話バッファ初期化
+  → ※ start を再受信した場合はエラーにせず、既存リソースをクリーンアップして再初期化する（言語切り替え用途、bd-simple-translator-mgk）
 [recv audio]*
   → base64 デコード → STTストリームへ write（※生の音声チャンクでは無音タイマーをリセットしない）
   → STT interim → transcript_interim 送信（表示のみ）→ utteranceBuffer.notifyInterim() で無音タイマーをリセット
@@ -140,7 +141,7 @@ Speech-to-Text Streaming には1ストリームあたりの時間上限がある
 
 ### タイマー設計
 
-- **無音タイマー**: **STT結果（interim/final）を受けたとき**にリセットする `silenceMs` のタイマー。発火時に非空バッファを確定。リセット契機は次の2つに限る（`bd-simple-translator-cbv` で修正）:
+- **無音タイマー**: **STT結果（interim/final）を受けたとき**にリセットする `silenceMs` のタイマー。発火時に非空バッファを確定。**バッファが非空のときのみ起動・リセットする（空バッファでは無音タイマーを起動しない）**（bd-simple-translator-mgk）。リセット契機は次の2つに限る（`bd-simple-translator-cbv` で修正）:
   - interim 受信時: `utteranceBuffer.notifyInterim()`（旧 `notifyAudio()` をリネーム）でリセット。話している間は確定させない。
   - final 受信時: `addFinal` がリセット。
   - **生の音声チャンク（audio 受信）ではリセットしない**。MediaRecorder は無音でもチャンクを送出するため、音声でリセットすると無音タイマーが永久に発火しない（[音声認識](#音声認識要件-152) 節および [外部依存の前提](#外部依存の前提) 参照）。
@@ -170,7 +171,7 @@ Speech-to-Text Streaming には1ストリームあたりの時間上限がある
 - 確定発話テキストを Cloud Translation（v2 Basic）へ渡す。
 - `sourceLanguage` / `targetLanguage` は言語コードから2文字コードへ変換して渡す（`ja-JP`→`ja`、`en-US`→`en`）。
 - 結果を `translation`（sourceText / translatedText）で返す。
-- interim の仮翻訳は初期 OFF（`enableInterimTranslation=false`）。ON の場合のみ interim を翻訳して表示用に返すが、**TTSは行わない**（要件 §13.5）。
+- **interim の仮翻訳は実装では未実装**（MVPは確定発話のみ翻訳、bd-simple-translator-mgk）。サーバーは `enableInterimTranslation` を受け取るが、interim を翻訳する経路は存在しない（確定した発話区切りのみ Translation → TTS の対象）。`enableInterimTranslation=true` でも interim 翻訳は行われない。なお interim・仮翻訳は仮に翻訳しても **TTSは行わない**（要件 §13.5）。
 
 詳細は [gcp-integration.md](./gcp-integration.md#translation) を参照。
 
@@ -216,6 +217,9 @@ Speech-to-Text Streaming には1ストリームあたりの時間上限がある
 
 - 原則 WebSocket 接続は維持する。致命的な場合のみ終了（要件 §15.6）。
 - エラーメッセージはクライアント表示用とし、GCP の内部詳細やスタックトレースをそのまま流さない（[security-design.md](./security-design.md#エラー情報) 参照）。
+- **STTストリームのエラーは種別で異なるユーザー向けメッセージを返す**（いずれも `fatal:false`、bd-simple-translator-mgk）:
+  - タイムアウト系（`"Audio Timeout"` / `"DEADLINE_EXCEEDED"`）: ストリーム時間上限・無音継続に起因する旨のメッセージ（再接続を促す）。
+  - その他: 一般的な音声認識エラーのメッセージ。
 
 ---
 

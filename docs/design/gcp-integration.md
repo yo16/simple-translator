@@ -103,7 +103,7 @@ const recognizeStream = speechClient
 ### 音声チャンクの書き込み
 
 - 受信した base64 → `Buffer.from(data, "base64")` → `recognizeStream.write(buffer)`。
-- チャンク間隔は `chunkMs`（既定500ms）。クライアント側の MediaRecorder の timeslice に対応する。
+- チャンク間隔は `chunkMs`（既定250ms、bd-simple-translator-mgk）。クライアント側の MediaRecorder の timeslice に対応する。
 
 ---
 

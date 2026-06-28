@@ -5,7 +5,7 @@ import { UtteranceCommitReason } from "./types";
 // ============================================================
 
 export interface UtteranceBufferConfig {
-  /** 無音タイマー: 最後に final/audio を受けてからのミリ秒数。超過で確定 */
+  /** 無音タイマー: 最後に final/interim を受けてからのミリ秒数。超過で確定（生の音声チャンクではリセットしない） */
   silenceMs: number;
   /** 文字数上限: バッファのテキスト長がこれを超えたら即座に確定 */
   maxChars: number;
