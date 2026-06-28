@@ -570,20 +570,23 @@ describe("TranslatorApp", () => {
   // 9. 言語ペア切り替え
   // ----------------------------------------------------------
   describe("言語ペア切り替え", () => {
-    it("言語入れ替えボタンをクリックすると言語が入れ替わる", () => {
+    it("言語入れ替えボタンをクリックすると source/target の select 値が入れ替わる", () => {
       renderTranslatorApp();
 
-      // 初期状態: 日本語 ⇄ 英語
-      const langBtn = screen.getByRole("button", { name: "言語を入れ替える" });
+      const sourceSelect = screen.getByRole("combobox", { name: "入力言語" }) as HTMLSelectElement;
+      const targetSelect = screen.getByRole("combobox", { name: "出力言語" }) as HTMLSelectElement;
+
+      // 初期値: ja-JP → en-US
+      expect(sourceSelect.value).toBe("ja-JP");
+      expect(targetSelect.value).toBe("en-US");
 
       act(() => {
-        fireEvent.click(langBtn);
+        fireEvent.click(screen.getByRole("button", { name: "入力言語と出力言語を入れ替える" }));
       });
 
-      // 入れ替え後は英語 → 日本語 の順になる
-      const langElements = screen.getAllByText(/日本語|英語/);
-      // 2つの言語ラベルが表示されている（入れ替わり後も両方表示される）
-      expect(langElements.length).toBeGreaterThanOrEqual(2);
+      // 入れ替え後: en-US → ja-JP
+      expect(sourceSelect.value).toBe("en-US");
+      expect(targetSelect.value).toBe("ja-JP");
     });
 
     it("接続中（connecting）は言語入れ替えボタンが disabled", () => {
@@ -593,8 +596,91 @@ describe("TranslatorApp", () => {
         fireEvent.click(screen.getByRole("button", { name: "開始" }));
       });
 
-      const langToggleBtn = screen.getByRole("button", { name: "言語を入れ替える" });
+      const langToggleBtn = screen.getByRole("button", { name: "入力言語と出力言語を入れ替える" });
       expect((langToggleBtn as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("入力言語を select で変更すると sendStart に新しい sourceLanguage が渡される", async () => {
+      const mockStream = makeMockStream();
+      mockGetUserMedia.mockResolvedValue(mockStream);
+
+      renderTranslatorApp();
+
+      // 入力言語を ja-JP から zh-CN に変更
+      const sourceSelect = screen.getByRole("combobox", { name: "入力言語" });
+      act(() => {
+        fireEvent.change(sourceSelect, { target: { value: "zh-CN" } });
+      });
+
+      // 接続開始 → recording へ
+      act(() => {
+        fireEvent.click(screen.getByRole("button", { name: "開始" }));
+      });
+
+      await act(async () => {
+        capturedCallbacks.onConnected?.();
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(mockWsSendStart).toHaveBeenCalledTimes(1);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((mockWsSendStart.mock.calls[0] as any[])[0]).toMatchObject({ sourceLanguage: "zh-CN" });
+    });
+
+    it("出力言語を select で変更すると sendStart に新しい targetLanguage が渡される", async () => {
+      const mockStream = makeMockStream();
+      mockGetUserMedia.mockResolvedValue(mockStream);
+
+      renderTranslatorApp();
+
+      // 出力言語を en-US から ko-KR に変更
+      const targetSelect = screen.getByRole("combobox", { name: "出力言語" });
+      act(() => {
+        fireEvent.change(targetSelect, { target: { value: "ko-KR" } });
+      });
+
+      // 接続開始 → recording へ
+      act(() => {
+        fireEvent.click(screen.getByRole("button", { name: "開始" }));
+      });
+
+      await act(async () => {
+        capturedCallbacks.onConnected?.();
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(mockWsSendStart).toHaveBeenCalledTimes(1);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((mockWsSendStart.mock.calls[0] as any[])[0]).toMatchObject({ targetLanguage: "ko-KR" });
+    });
+
+    it("入替ボタン押下後に接続すると sendStart に入替後の言語ペアが渡される", async () => {
+      const mockStream = makeMockStream();
+      mockGetUserMedia.mockResolvedValue(mockStream);
+
+      renderTranslatorApp();
+
+      // 入替ボタンをクリック（ja-JP→en-US が en-US→ja-JP になる）
+      act(() => {
+        fireEvent.click(screen.getByRole("button", { name: "入力言語と出力言語を入れ替える" }));
+      });
+
+      // 接続開始 → recording へ
+      act(() => {
+        fireEvent.click(screen.getByRole("button", { name: "開始" }));
+      });
+
+      await act(async () => {
+        capturedCallbacks.onConnected?.();
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(mockWsSendStart).toHaveBeenCalledTimes(1);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((mockWsSendStart.mock.calls[0] as any[])[0]).toMatchObject({
+        sourceLanguage: "en-US",
+        targetLanguage: "ja-JP",
+      });
     });
   });
 });
