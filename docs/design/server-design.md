@@ -40,6 +40,8 @@ server/
   types.ts          # サーバー側型・メッセージ型
 ```
 
+> 言語コード（STT/Translation/TTS）の解決には、フロント／サーバー共有の言語レジストリ `languages.ts` を参照する（[gcp-integration.md](./gcp-integration.md#言語レジストリ多言語対応の基盤) 参照）。`speechStream.ts` / `translate.ts` / `textToSpeech.ts` はレジストリのフィールドを引いて各APIへ渡す。
+
 ### 責務分離の方針
 
 - `utteranceBuffer.ts` は I/O を持たない純粋ロジックにし、単体テストしやすくする（テスト必須ルール）。
@@ -106,6 +108,7 @@ interface SessionState {
 ## 音声認識（要件 §15.2）
 
 - 受信した `audio.data`（base64 / WebM Opus）をデコードし、**維持している単一のSTTストリーム**へ書き込む。
+- STT の `languageCode` は**言語レジストリの `sttCode` を参照**する（プロトコルコードを素通ししない。中国語は `cmn-Hans-CN` / `cmn-Hant-TW`）。[gcp-integration.md](./gcp-integration.md#言語レジストリ多言語対応の基盤) 参照。
 - **STTストリームはセッション中切り直さない**。WebM/Opus のコンテナヘッダは最初のチャンクのみに含まれるため、ストリームを切ると後続チャンクがデコード不能になる（[gcp-integration.md](./gcp-integration.md#stt-ストリーム維持) 参照）。
 - STT のレスポンスを `isFinal` で分岐する。
   - interim → `transcript_interim` を即時送信（要件 §15.2）。発話バッファには入れない。**`utteranceBuffer.notifyInterim()` を呼び、無音タイマーをリセットする**（話している間は確定させないため）。
@@ -169,7 +172,7 @@ Speech-to-Text Streaming には1ストリームあたりの時間上限がある
 ## 翻訳（要件 §15.4）
 
 - 確定発話テキストを Cloud Translation（v2 Basic）へ渡す。
-- `sourceLanguage` / `targetLanguage` は言語コードから2文字コードへ変換して渡す（`ja-JP`→`ja`、`en-US`→`en`）。
+- 翻訳先コードは**言語レジストリの `translationCode` を参照**する（従来の `split("-")[0]` 方式は廃止。`zh-CN`/`zh-TW` を区別するため）。[gcp-integration.md](./gcp-integration.md#言語コード変換レジストリ参照) 参照。
 - 結果を `translation`（sourceText / translatedText）で返す。
 - **interim の仮翻訳は実装では未実装**（MVPは確定発話のみ翻訳、bd-simple-translator-mgk）。サーバーは `enableInterimTranslation` を受け取るが、interim を翻訳する経路は存在しない（確定した発話区切りのみ Translation → TTS の対象）。`enableInterimTranslation=true` でも interim 翻訳は行われない。なお interim・仮翻訳は仮に翻訳しても **TTSは行わない**（要件 §13.5）。
 
@@ -179,7 +182,8 @@ Speech-to-Text Streaming には1ストリームあたりの時間上限がある
 
 ## 音声合成（要件 §15.5）
 
-- `enableTts=true` のときのみ、翻訳結果を Cloud Text-to-Speech へ渡す。
+- `enableTts=true` のときのみ、翻訳結果を Cloud Text-to-Speech へ渡す（`enableTts` はクライアントが言語別設定を解決した boolean。サーバーは boolean のみ参照、[websocket-protocol.md](./websocket-protocol.md#startセッション開始) 参照）。
+- TTS の `voice`（`languageCode` / `name` / `ssmlGender`）は**言語レジストリの `ttsLanguageCode` / `ttsVoiceName` / `ttsGender` を参照**する。ボイス名は起動時の `listVoices()` 検証結果に従いフォールバックする（[gcp-integration.md](./gcp-integration.md#ttsボイス名の検証方針重要な前提) 参照）。
 - 出力は MP3（`audio/mpeg`）。base64 にして `audio` メッセージで返す。
 - **確定発話区切りのみが対象**。interim・仮翻訳は音声化しない（要件 §13.5）。
 - MVPでは同期合成でよい（要件 §15.5 / §23）。

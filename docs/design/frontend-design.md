@@ -54,9 +54,13 @@ app/layout.tsx                (Server Component)
 
 ### LanguageSelector
 
-- 入力/出力言語の選択（MVPは `ja-JP` / `en-US` の2値、要件 §11.2）。
-- 「日本語→英語」「英語→日本語」のペアのみ許可。同一言語の選択を防ぐ。
-- 接続中（recording 中）は変更不可にする。
+多言語対応（段階導入）に伴い、`⇄` トグル（ja/en 入替）から **source / target の2つの `<select>` ＋ 入替ボタン**に変更する。
+
+- 選択肢は**言語レジストリの `label` から動的生成**する（[gcp-integration.md](./gcp-integration.md#言語レジストリ多言語対応の基盤) 参照）。言語追加はレジストリへのデータ追加のみで選択肢に反映される。
+- `source === target` を選べないようガードする（一方を変更したらもう一方を自動調整、または同一値を無効化）。zod schema 側でも `source ≠ target` を検証済み（[websocket-protocol.md](./websocket-protocol.md#バリデーション方針zod) 参照）。
+- 入替ボタンは source / target を入れ替える。
+- 接続中（recording 中）は変更不可にする（既存挙動を維持）。
+- 表示集合は第1陣（`ja-JP` / `en-US` / `zh-CN` / `zh-TW` / `ko-KR`）から開始し、レジストリへの第2陣追加で拡張される。
 
 ### Recorder
 
@@ -82,7 +86,7 @@ app/layout.tsx                (Server Component)
 
 ### SettingsPanel
 
-- 音声再生 ON/OFF（`enableTts`）
+- 音声再生 ON/OFF（言語別 TTS）: **ターゲット言語ごとに TTS の ON/OFF を保持**する（`ttsByLanguage`）。少なくとも現在の `targetLanguage` に対する ON/OFF を切り替えられるようにする（§ [言語別 TTS](#言語別-tts) 参照）。
 - 発話区切り設定: `chunkMs` / `silenceMs` / `maxChars` / `maxSeconds`（要件 §11.1 / §13.3、数値変更可）
 - interim 仮翻訳モード ON/OFF（初期 OFF、要件 §13.4）
 - 値は接続前に確定し、`start` メッセージへ反映する。録音中の変更反映は MVP対象外（再接続で反映）。
@@ -142,7 +146,7 @@ interface AppState {
 
 > 実装では `useWebSocketWithAudio(dispatch, { onAudioReceived, onConnected })` を使う（受信音声の再生連携込み）。素の `useWebSocket(dispatch, onConnected?)` も存在する（bd-simple-translator-mgk）。
 
-- `connect()` で WebSocket を開く。`onConnected` 確立後に `sendStart()`（settings 反映）を送る。
+- `connect()` で WebSocket を開く。`onConnected` 確立後に `sendStart()`（settings 反映）を送る。送信時に**言語別 TTS を boolean へ解決**する（§ [言語別 TTS](#言語別-tts) 参照）。
 - 提供メソッド: `connect()` / `disconnect()` / `sendStart()` / `sendAudio(base64)` / `sendCommit()` / `sendStop()`。
 - `onMessage` を JSON パースし、`type` で `dispatch` を通じ reducer アクションへ振り分ける。`audio` 受信時は `onAudioReceived` を呼ぶ。
 - 接続先は `process.env.NEXT_PUBLIC_WS_URL`（[websocket-protocol.md](./websocket-protocol.md#接続) 参照）。
@@ -157,6 +161,36 @@ interface AppState {
 #### useAudioQueue()
 
 - 受信音声の FIFO 再生（[§6](#音声再生)）。
+
+---
+
+## 言語別 TTS
+
+ターゲット言語ごとに TTS の ON/OFF を切り替える。**ワイヤープロトコルは不変**で、`start.enableTts` は boolean のまま（[websocket-protocol.md](./websocket-protocol.md#startセッション開始) 参照）。言語別の解決は**クライアント側で完結**させ、サーバー改修は最小に保つ。
+
+### Settings での保持
+
+```ts
+// src/lib/types.ts （設計指針）
+interface Settings {
+  // ... chunkMs / silenceMs / maxChars / maxSeconds / enableInterimTranslation
+  ttsByLanguage: Partial<Record<SupportedLanguage, boolean>>;  // ターゲット言語別 TTS ON/OFF
+  // 既定値（未設定言語に適用）。DEFAULT_SETTINGS に保持（bd-simple-translator-mgk）
+  defaultTtsEnabled: boolean;
+}
+```
+
+### start 送信時の解決
+
+`sendStart()` 時に、現在の `targetLanguage` に対する設定を boolean へ解決して送る。
+
+```ts
+const enableTts = settings.ttsByLanguage[targetLanguage] ?? settings.defaultTtsEnabled;
+// → start メッセージの enableTts に boolean を入れて送信
+```
+
+- 言語も TTS 設定も**セッション開始前に確定**する現行モデルと整合（セッション中の変更反映は MVP対象外、再接続で反映）。
+- サーバーは従来どおり boolean の `enableTts` のみを参照する（[server-design.md](./server-design.md#音声合成要件-155) 参照）。
 
 ---
 
