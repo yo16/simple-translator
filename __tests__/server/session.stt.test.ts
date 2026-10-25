@@ -21,6 +21,7 @@ import WebSocket from "ws";
 import { Session } from "../../server/session";
 import { ClientMessage } from "../../server/schema";
 import { createSpeechStream } from "../../server/speechStream";
+import { SupportedLanguage } from "../../server/types";
 
 // ---------------------------------------------------------------------------
 // speechStream モジュール全体をモック化する
@@ -71,15 +72,20 @@ function getSentMessages(mockWs: ReturnType<typeof createMockWs>): Record<string
 // ヘルパー: 有効な start メッセージ
 // ---------------------------------------------------------------------------
 function makeStartMsg(overrides: Partial<{
-  sourceLanguage: "ja-JP" | "en-US";
+  sourceLanguage: SupportedLanguage;
+  targetLanguage: SupportedLanguage;
   silenceMs: number;
   maxChars: number;
   maxSeconds: number;
 }> = {}): ClientMessage {
+  // sourceLanguage と targetLanguage が同一だとスキーマ検証エラーになるため、
+  // sourceLanguage に応じたデフォルト targetLanguage を設定する
+  const sourceLanguage = overrides.sourceLanguage ?? "ja-JP";
+  const defaultTarget: SupportedLanguage = sourceLanguage === "en-US" ? "ja-JP" : "en-US";
   return {
     type: "start",
-    sourceLanguage: overrides.sourceLanguage ?? "ja-JP",
-    targetLanguage: "en-US",
+    sourceLanguage,
+    targetLanguage: overrides.targetLanguage ?? defaultTarget,
     enableTts: false,
     enableInterimTranslation: false,
     chunkMs: 250,
@@ -618,5 +624,104 @@ describe("Session STT 配線 — stop メッセージ", () => {
       session.handleMessage({ type: "stop" });
       session.dispose();
     }).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8. 多言語 STT コード検証（c2n.3 対応）
+//    createSpeechStream に渡る languageCode がレジストリ変換後の値であること
+// ---------------------------------------------------------------------------
+describe("Session STT 配線 — 多言語 STT languageCode 変換（c2n.3）", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test("sourceLanguage='zh-CN' のとき createSpeechStream に languageCode='cmn-Hans-CN' が渡る", () => {
+    // Arrange: zh-CN の sttCode は "cmn-Hans-CN"（LANGUAGE_REGISTRY による変換）
+    setupMockSpeechStream();
+    const mockWs = createMockWs();
+    const session = new Session(mockWs as unknown as WebSocket);
+    session.handleMessage(makeStartMsg({ sourceLanguage: "zh-CN" }));
+
+    // Act
+    session.handleMessage({ type: "audio", data: "SGVsbG8=" });
+
+    // Assert: プロトコルコード "zh-CN" がそのまま渡らず、レジストリの sttCode に変換されること
+    expect(mockCreateSpeechStream).toHaveBeenCalledWith(
+      expect.objectContaining({ languageCode: "cmn-Hans-CN" })
+    );
+
+    session.dispose();
+  });
+
+  test("sourceLanguage='zh-TW' のとき createSpeechStream に languageCode='cmn-Hant-TW' が渡る", () => {
+    // Arrange: zh-TW の sttCode は "cmn-Hant-TW"（LANGUAGE_REGISTRY による変換）
+    setupMockSpeechStream();
+    const mockWs = createMockWs();
+    const session = new Session(mockWs as unknown as WebSocket);
+    session.handleMessage(makeStartMsg({ sourceLanguage: "zh-TW" }));
+
+    // Act
+    session.handleMessage({ type: "audio", data: "SGVsbG8=" });
+
+    // Assert: プロトコルコード "zh-TW" がそのまま渡らず、レジストリの sttCode に変換されること
+    expect(mockCreateSpeechStream).toHaveBeenCalledWith(
+      expect.objectContaining({ languageCode: "cmn-Hant-TW" })
+    );
+
+    session.dispose();
+  });
+
+  test("zh-CN と zh-TW で STT languageCode が異なる（'cmn-Hans-CN' ≠ 'cmn-Hant-TW'）", () => {
+    // Arrange
+    const { destroy: destroyCN } = setupMockSpeechStream();
+    const mockWsCN = createMockWs();
+    const sessionCN = new Session(mockWsCN as unknown as WebSocket);
+    sessionCN.handleMessage(makeStartMsg({ sourceLanguage: "zh-CN" }));
+    sessionCN.handleMessage({ type: "audio", data: "SGVsbG8=" });
+
+    const callArgCN = (mockCreateSpeechStream.mock.calls[0][0] as { languageCode: string });
+    const langCodeCN = callArgCN.languageCode;
+
+    jest.clearAllMocks();
+    sessionCN.dispose();
+
+    setupMockSpeechStream();
+    const mockWsTW = createMockWs();
+    const sessionTW = new Session(mockWsTW as unknown as WebSocket);
+    sessionTW.handleMessage(makeStartMsg({ sourceLanguage: "zh-TW" }));
+    sessionTW.handleMessage({ type: "audio", data: "SGVsbG8=" });
+
+    const callArgTW = (mockCreateSpeechStream.mock.calls[0][0] as { languageCode: string });
+    const langCodeTW = callArgTW.languageCode;
+
+    // Assert: zh-CN と zh-TW で STT コードが異なること
+    expect(langCodeCN).toBe("cmn-Hans-CN");
+    expect(langCodeTW).toBe("cmn-Hant-TW");
+    expect(langCodeCN).not.toBe(langCodeTW);
+
+    sessionTW.dispose();
+  });
+
+  test("sourceLanguage='ko-KR' のとき createSpeechStream に languageCode='ko-KR' が渡る", () => {
+    // Arrange: ko-KR の sttCode は "ko-KR"（レジストリ値そのまま）
+    setupMockSpeechStream();
+    const mockWs = createMockWs();
+    const session = new Session(mockWs as unknown as WebSocket);
+    session.handleMessage(makeStartMsg({ sourceLanguage: "ko-KR" }));
+
+    // Act
+    session.handleMessage({ type: "audio", data: "SGVsbG8=" });
+
+    // Assert
+    expect(mockCreateSpeechStream).toHaveBeenCalledWith(
+      expect.objectContaining({ languageCode: "ko-KR" })
+    );
+
+    session.dispose();
   });
 });

@@ -5,23 +5,75 @@ exports[`LanguageSelector スナップショット ja-JP → en-US の通常表�
   <div
     class="languageSelector"
   >
-    <span
-      class="language"
+    <select
+      aria-label="入力言語"
+      class="languageSelect"
     >
-      日本語
-    </span>
+      <option
+        value="ja-JP"
+      >
+        日本語
+      </option>
+      <option
+        disabled=""
+        value="en-US"
+      >
+        英語
+      </option>
+      <option
+        value="zh-CN"
+      >
+        中国語(簡体)
+      </option>
+      <option
+        value="zh-TW"
+      >
+        中国語(繁体)
+      </option>
+      <option
+        value="ko-KR"
+      >
+        韓国語
+      </option>
+    </select>
     <button
-      aria-label="言語を入れ替える"
-      class="toggleBtn"
+      aria-label="入力言語と出力言語を入れ替える"
+      class="swapBtn"
       type="button"
     >
       ⇄
     </button>
-    <span
-      class="language"
+    <select
+      aria-label="出力言語"
+      class="languageSelect"
     >
-      英語
-    </span>
+      <option
+        disabled=""
+        value="ja-JP"
+      >
+        日本語
+      </option>
+      <option
+        value="en-US"
+      >
+        英語
+      </option>
+      <option
+        value="zh-CN"
+      >
+        中国語(簡体)
+      </option>
+      <option
+        value="zh-TW"
+      >
+        中国語(繁体)
+      </option>
+      <option
+        value="ko-KR"
+      >
+        韓国語
+      </option>
+    </select>
   </div>
 </DocumentFragment>
 `;
@@ -31,24 +83,78 @@ exports[`LanguageSelector スナップショット recording 中（disabled）�
   <div
     class="languageSelector"
   >
-    <span
-      class="language"
+    <select
+      aria-label="入力言語"
+      class="languageSelect"
+      disabled=""
     >
-      日本語
-    </span>
+      <option
+        value="ja-JP"
+      >
+        日本語
+      </option>
+      <option
+        disabled=""
+        value="en-US"
+      >
+        英語
+      </option>
+      <option
+        value="zh-CN"
+      >
+        中国語(簡体)
+      </option>
+      <option
+        value="zh-TW"
+      >
+        中国語(繁体)
+      </option>
+      <option
+        value="ko-KR"
+      >
+        韓国語
+      </option>
+    </select>
     <button
-      aria-label="言語を入れ替える"
-      class="toggleBtn"
+      aria-label="入力言語と出力言語を入れ替える"
+      class="swapBtn"
       disabled=""
       type="button"
     >
       ⇄
     </button>
-    <span
-      class="language"
+    <select
+      aria-label="出力言語"
+      class="languageSelect"
+      disabled=""
     >
-      英語
-    </span>
+      <option
+        disabled=""
+        value="ja-JP"
+      >
+        日本語
+      </option>
+      <option
+        value="en-US"
+      >
+        英語
+      </option>
+      <option
+        value="zh-CN"
+      >
+        中国語(簡体)
+      </option>
+      <option
+        value="zh-TW"
+      >
+        中国語(繁体)
+      </option>
+      <option
+        value="ko-KR"
+      >
+        韓国語
+      </option>
+    </select>
   </div>
 </DocumentFragment>
 `;
@@ -723,23 +829,75 @@ exports[`TranslatorApp スナップショット idle 初期表示の全体 DOM �
     <div
       class="languageSelector"
     >
-      <span
-        class="language"
+      <select
+        aria-label="入力言語"
+        class="languageSelect"
       >
-        日本語
-      </span>
+        <option
+          value="ja-JP"
+        >
+          日本語
+        </option>
+        <option
+          disabled=""
+          value="en-US"
+        >
+          英語
+        </option>
+        <option
+          value="zh-CN"
+        >
+          中国語(簡体)
+        </option>
+        <option
+          value="zh-TW"
+        >
+          中国語(繁体)
+        </option>
+        <option
+          value="ko-KR"
+        >
+          韓国語
+        </option>
+      </select>
       <button
-        aria-label="言語を入れ替える"
-        class="toggleBtn"
+        aria-label="入力言語と出力言語を入れ替える"
+        class="swapBtn"
         type="button"
       >
         ⇄
       </button>
-      <span
-        class="language"
+      <select
+        aria-label="出力言語"
+        class="languageSelect"
       >
-        英語
-      </span>
+        <option
+          disabled=""
+          value="ja-JP"
+        >
+          日本語
+        </option>
+        <option
+          value="en-US"
+        >
+          英語
+        </option>
+        <option
+          value="zh-CN"
+        >
+          中国語(簡体)
+        </option>
+        <option
+          value="zh-TW"
+        >
+          中国語(繁体)
+        </option>
+        <option
+          value="ko-KR"
+        >
+          韓国語
+        </option>
+      </select>
     </div>
     <div
       class="recorder"

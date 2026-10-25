@@ -41,6 +41,70 @@ gcloud auth application-default login
 
 ---
 
+## 言語レジストリ（多言語対応の基盤）
+
+多言語対応（段階導入）にあたり、**1エントリ＝1言語で各APIの言語コードを一元管理する共有モジュール `languages.ts` を新設**する。STT / Translation / TTS の各処理はこのレジストリを参照する実装に統一し、**言語の追加はレジストリへのデータ追加のみで完結**できるようにする（フロント・サーバーで共有する正本）。
+
+### データモデル
+
+```ts
+// languages.ts （設計指針。フロント／サーバーで共有）
+interface LanguageEntry {
+  code: SupportedLanguage;   // protocolコード（BCP-47, 例 "ja-JP"）。WebSocketメッセージで使う正本
+  label: string;             // UI表示名（例 "日本語"）
+  sttCode: string;           // Speech-to-Text recognition languageCode
+  translationCode: string;   // Translation v2 の from/to コード
+  ttsLanguageCode: string;   // Text-to-Speech voice.languageCode
+  ttsVoiceName?: string;     // TTS voice.name（NEUTRAL非対応言語で必須）
+  ttsGender: "NEUTRAL" | "MALE" | "FEMALE";
+}
+```
+
+- `code` がプロトコル上の正本（WebSocketメッセージの `sourceLanguage` / `targetLanguage`）。各API用コードは `code` から導出せず、必ずレジストリの該当フィールドを引く。
+- `SupportedLanguage` は [websocket-protocol.md](./websocket-protocol.md#バリデーション方針zod) の `LanguageEnum` と同一集合にする。
+
+### GCPコード対応表（全13言語・段階導入）
+
+| protocol | 表示名 | STT (recognition) | Translation v2 | TTS languageCode | TTS voice（候補・要 listVoices 検証） | gender |
+|---|---|---|---|---|---|---|
+| `ja-JP` | 日本語 | `ja-JP` | `ja` | `ja-JP` | `ja-JP-Neural2-B` | NEUTRAL（現状動作） |
+| `en-US` | 英語 | `en-US` | `en` | `en-US` | `en-US-Neural2-C` | NEUTRAL（現状動作） |
+| `zh-CN` | 中国語(簡体) | `cmn-Hans-CN` | `zh-CN` | `cmn-CN` | `cmn-CN-Wavenet-A` | FEMALE（NEUTRAL不可） |
+| `zh-TW` | 中国語(繁体) | `cmn-Hant-TW` | `zh-TW` | `cmn-TW` | `cmn-TW-Wavenet-A` | FEMALE（NEUTRAL不可） |
+| `ko-KR` | 韓国語 | `ko-KR` | `ko` | `ko-KR` | `ko-KR-Neural2-A` | FEMALE |
+| `fr-FR` | フランス語 | `fr-FR` | `fr` | `fr-FR` | `fr-FR-Neural2-A` | FEMALE |
+| `es-ES` | スペイン語 | `es-ES` | `es` | `es-ES` | `es-ES-Neural2-A` | FEMALE |
+| `de-DE` | ドイツ語 | `de-DE` | `de` | `de-DE` | `de-DE-Neural2-A` | FEMALE |
+| `pt-BR` | ポルトガル語(ブラジル) | `pt-BR` | `pt` | `pt-BR` | `pt-BR-Neural2-A` | FEMALE |
+| `th-TH` | タイ語 | `th-TH` | `th` | `th-TH` | `th-TH-Neural2-C` | FEMALE（NEUTRAL不可） |
+| `fil-PH` | フィリピン語 | `fil-PH` | `fil`（不可時 `tl` にフォールバック） | `fil-PH` | `fil-PH-Wavenet-A` | FEMALE（NEUTRAL不可） |
+| `vi-VN` | ベトナム語 | `vi-VN` | `vi` | `vi-VN` | `vi-VN-Wavenet-A` | FEMALE（NEUTRAL不可） |
+| `ms-MY` | マレー語 | `ms-MY` | `ms` | `ms-MY` | `ms-MY-Wavenet-A` | FEMALE（NEUTRAL不可） |
+
+### 段階導入
+
+- **第1陣（先行実装・テスト対象）**: `ja-JP`, `en-US`, `zh-CN`, `zh-TW`, `ko-KR`
+- **第2陣（後続）**: `fr-FR`, `es-ES`, `de-DE`, `pt-BR`, `th-TH`, `fil-PH`, `vi-VN`, `ms-MY`
+
+レジストリ構造と本ドキュメントは全13言語を記載するが、実装・テストは第1陣から進める。
+
+### 言語コードの注意点（重要）
+
+- **既存実装はプロトコルの言語コードを各APIへ素通ししていた**。`ja` / `en` がたまたま STT / Translation / TTS のいずれでも有効だったために成立していた。多言語ではコード体系がAPIごとに異なるため、**レジストリ経由に変更が必要**。
+- **Translation の従来の `toTranslationLangCode`（`split("-")[0]`）は使えない**。`zh-CN` / `zh-TW` を両方 `zh` に潰してしまい簡体・繁体を区別できない。**レジストリの `translationCode` を使う**（簡繁を `zh-CN` / `zh-TW` として区別）。
+- **STT の中国語は script subtag 付き**（`cmn-Hans-CN` / `cmn-Hant-TW`）。プロトコルコード（`zh-CN` / `zh-TW`）とは別物なのでレジストリの `sttCode` を使う。
+- `fil-PH` の Translation コードは `fil`。利用不可の場合は `tl` へフォールバックする。
+
+### TTSボイス名の検証方針（重要な前提）
+
+STT / Translation の言語コードは安定しているが、**TTS のボイス名（`ttsVoiceName`）は時期によって提供状況が変動する**。上表のボイス名は候補であり、**実装時に `client.listVoices()` で実在を検証する前提**とする。
+
+- 優先度は **Neural2 > WaveNet > Standard**。
+- レジストリ指定のボイスが `listVoices()` の結果に存在しない場合は、**実装側で同一 `ttsLanguageCode` の利用可能ボイスへフォールバックし、ログに記録**する。
+- `NEUTRAL` が使えない言語（上表で「NEUTRAL不可」の言語）は `ttsVoiceName` と `ttsGender`（FEMALE 等）を必ず指定する。
+
+---
+
 ## 音声形式
 
 ### 採用形式: WebM/Opus
@@ -79,7 +143,7 @@ const streamingConfig = {
   config: {
     encoding: "WEBM_OPUS",
     sampleRateHertz: 48000,
-    languageCode: sourceLanguage,   // "ja-JP" | "en-US"
+    languageCode: sttCodeOf(sourceLanguage),  // レジストリの sttCode（例 ja-JP→"ja-JP", zh-CN→"cmn-Hans-CN"）
     enableAutomaticPunctuation: true,
   },
   interimResults: true,             // interim 表示のため必須
@@ -100,6 +164,8 @@ const recognizeStream = speechClient
 
 `enableAutomaticPunctuation` を有効にして、句読点付きの自然なテキストを得る（翻訳品質優先、要件 §4）。
 
+`languageCode` には**レジストリの `sttCode` を使う**（プロトコルコードを素通ししない）。中国語は script subtag 付き（`zh-CN`→`cmn-Hans-CN`、`zh-TW`→`cmn-Hant-TW`）になる点に注意（[言語レジストリ](#言語レジストリ多言語対応の基盤) 参照）。
+
 ### 音声チャンクの書き込み
 
 - 受信した base64 → `Buffer.from(data, "base64")` → `recognizeStream.write(buffer)`。
@@ -111,31 +177,31 @@ const recognizeStream = speechClient
 
 ### 採用バージョン: v2 (Basic)
 
-MVP（ja⇄en のみ）ではシンプルさを優先し、`@google-cloud/translate` の `v2.Translate` を採用する。
+多言語対応（段階導入）でもシンプルさを優先し、`@google-cloud/translate` の `v2.Translate` を継続採用する。
 
 ```ts
 // server/translate.ts （設計指針）
 import { v2 } from "@google-cloud/translate";
 const translate = new v2.Translate({ projectId: process.env.GOOGLE_CLOUD_PROJECT });
 
-async function translateText(text: string, target: "ja" | "en"): Promise<string> {
+// target はレジストリの translationCode（例 "ja" / "zh-CN" / "zh-TW"）
+async function translateText(text: string, target: string): Promise<string> {
   const [translated] = await translate.translate(text, target);
   return translated;
 }
 ```
 
-### 言語コード変換
+### 言語コード変換（レジストリ参照）
 
-| プロトコル上の言語 | Translation 用コード |
-|---|---|
-| `ja-JP` | `ja` |
-| `en-US` | `en` |
+Translation 用コードは**レジストリの `translationCode` を引く**（[言語レジストリ](#言語レジストリ多言語対応の基盤) 参照）。`targetLanguage` から明示的に target を決める。
 
-`source` は省略して自動判定でも可だが、MVPでは `targetLanguage` から明示的に target を決める。
+- **従来の `split("-")[0]` 方式は使えない**: `zh-CN` / `zh-TW` を両方 `zh` に潰し簡体・繁体を区別できなくなるため。レジストリでは `translationCode` を `zh-CN` / `zh-TW` として保持する。
+- `fil-PH` の `translationCode` は `fil`。利用不可の場合は `tl` へフォールバックする。
+- `source` は省略して自動判定でも可。
 
 ### v3 への移行余地
 
-将来、用語集（glossary）・モデル選択・多言語拡張が必要になった場合は Cloud Translation v3（`@google-cloud/translate` の `TranslationServiceClient`）への移行を検討する。MVPでは v2 で十分（要件 §4「不要な仕組みは排除」）。
+将来、用語集（glossary）・モデル選択・さらなる多言語拡張が必要になった場合は Cloud Translation v3（`@google-cloud/translate` の `TranslationServiceClient`）への移行を検討する。現時点では v2 で十分（要件 §4「不要な仕組みは排除」）。
 
 ---
 
@@ -145,9 +211,14 @@ async function translateText(text: string, target: "ja" | "en"): Promise<string>
 
 ```ts
 // server/textToSpeech.ts （設計指針）
+// entry はレジストリの LanguageEntry（targetLanguage で引く）
 const request = {
   input: { text: translatedText },
-  voice: { languageCode: targetLanguage, ssmlGender: "NEUTRAL" }, // "ja-JP" | "en-US"
+  voice: {
+    languageCode: entry.ttsLanguageCode,        // 例 ja-JP→"ja-JP", zh-CN→"cmn-CN"
+    name: entry.ttsVoiceName,                   // listVoices で検証済みのボイス名
+    ssmlGender: entry.ttsGender,                // "NEUTRAL" 不可の言語は FEMALE 等
+  },
   audioConfig: { audioEncoding: "MP3" },
 };
 const [response] = await ttsClient.synthesizeSpeech(request);
@@ -162,7 +233,7 @@ const base64 = Buffer.from(response.audioContent).toString("base64");
 | 対象 | 確定発話区切りの翻訳結果のみ（要件 §13.5） |
 | 合成方式 | 同期合成（`synthesizeSpeech`）。MVPはストリーミングTTS不要（要件 §23） |
 
-`targetLanguage` を `voice.languageCode` に直接指定する（`ja-JP` / `en-US`）。
+`voice` の各値は**レジストリの `ttsLanguageCode` / `ttsVoiceName` / `ttsGender` を引く**（プロトコルコードを素通ししない。例: `zh-CN`→`languageCode: "cmn-CN"`）。ボイス名は起動時の `listVoices()` 検証結果に基づき、無ければ同一 `ttsLanguageCode` 内でフォールバックする（[TTSボイス名の検証方針](#ttsボイス名の検証方針重要な前提) 参照）。
 クライアントは base64 を `decodeAudioData` で再生する（[frontend-design.md](./frontend-design.md#音声再生) 参照）。
 
 ---

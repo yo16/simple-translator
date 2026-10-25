@@ -457,7 +457,204 @@ describe("synthesize() — エラー伝播", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 9. getTtsClient() / setTtsClient() / resetTtsClient() — シングルトン制御
+// 9. synthesize() — 多言語 voice パラメータ検証（c2n.3 / getLanguageEntry ベース）
+// ---------------------------------------------------------------------------
+describe("synthesize() — 多言語 voice パラメータ検証", () => {
+  // ── zh-CN ──────────────────────────────────────────────────────────────────
+  test("zh-CN のとき voice.languageCode が 'cmn-CN' で渡る", async () => {
+    // Arrange
+    delete process.env.ENABLE_TTS;
+    const mockClient = makeMockClient();
+
+    // Act
+    await synthesize("你好", "zh-CN", mockClient as never);
+
+    // Assert
+    const callArg = mockClient.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { languageCode: string; ssmlGender: string; name?: string };
+    };
+    expect(callArg.voice.languageCode).toBe("cmn-CN");
+  });
+
+  test("zh-CN のとき voice.ssmlGender が 'FEMALE' で渡る", async () => {
+    // Arrange
+    delete process.env.ENABLE_TTS;
+    const mockClient = makeMockClient();
+
+    // Act
+    await synthesize("你好", "zh-CN", mockClient as never);
+
+    // Assert
+    const callArg = mockClient.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { ssmlGender: string };
+    };
+    expect(callArg.voice.ssmlGender).toBe("FEMALE");
+  });
+
+  test("zh-CN のとき voice.name が 'cmn-CN-Wavenet-A' で渡る", async () => {
+    // Arrange
+    delete process.env.ENABLE_TTS;
+    const mockClient = makeMockClient();
+
+    // Act
+    await synthesize("你好", "zh-CN", mockClient as never);
+
+    // Assert: ttsVoiceName が定義されているため name フィールドが存在すること
+    const callArg = mockClient.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { name?: string };
+    };
+    expect(callArg.voice.name).toBe("cmn-CN-Wavenet-A");
+  });
+
+  test("zh-CN の voice 全体が { languageCode:'cmn-CN', ssmlGender:'FEMALE', name:'cmn-CN-Wavenet-A' } に一致する", async () => {
+    // Arrange
+    delete process.env.ENABLE_TTS;
+    const mockClient = makeMockClient();
+
+    // Act
+    await synthesize("你好", "zh-CN", mockClient as never);
+
+    // Assert: voice オブジェクト全体を一致検証
+    const callArg = mockClient.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { languageCode: string; ssmlGender: string; name?: string };
+    };
+    expect(callArg.voice).toEqual({
+      languageCode: "cmn-CN",
+      ssmlGender: "FEMALE",
+      name: "cmn-CN-Wavenet-A",
+    });
+  });
+
+  // ── zh-TW ──────────────────────────────────────────────────────────────────
+  test("zh-TW の voice 全体が { languageCode:'cmn-TW', ssmlGender:'FEMALE', name:'cmn-TW-Wavenet-A' } に一致する", async () => {
+    // Arrange
+    delete process.env.ENABLE_TTS;
+    const mockClient = makeMockClient();
+
+    // Act
+    await synthesize("你好", "zh-TW", mockClient as never);
+
+    // Assert
+    const callArg = mockClient.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { languageCode: string; ssmlGender: string; name?: string };
+    };
+    expect(callArg.voice).toEqual({
+      languageCode: "cmn-TW",
+      ssmlGender: "FEMALE",
+      name: "cmn-TW-Wavenet-A",
+    });
+  });
+
+  // ── ko-KR ──────────────────────────────────────────────────────────────────
+  test("ko-KR の voice 全体が { languageCode:'ko-KR', ssmlGender:'FEMALE', name:'ko-KR-Neural2-A' } に一致する", async () => {
+    // Arrange
+    delete process.env.ENABLE_TTS;
+    const mockClient = makeMockClient();
+
+    // Act
+    await synthesize("안녕하세요", "ko-KR", mockClient as never);
+
+    // Assert
+    const callArg = mockClient.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { languageCode: string; ssmlGender: string; name?: string };
+    };
+    expect(callArg.voice).toEqual({
+      languageCode: "ko-KR",
+      ssmlGender: "FEMALE",
+      name: "ko-KR-Neural2-A",
+    });
+  });
+
+  // ── 回帰防止: ja-JP / en-US は name フィールドが存在しない ──────────────────
+  test("回帰防止: ja-JP の voice に name フィールドが存在しない（ttsVoiceName 未定義の言語）", async () => {
+    // Arrange
+    delete process.env.ENABLE_TTS;
+    const mockClient = makeMockClient();
+
+    // Act
+    await synthesize("こんにちは", "ja-JP", mockClient as never);
+
+    // Assert: name プロパティが undefined（フィールド自体が存在しない）こと
+    const callArg = mockClient.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { languageCode: string; ssmlGender: string; name?: string };
+    };
+    expect(callArg.voice.name).toBeUndefined();
+    // Object.hasOwn で name キー自体が存在しないことを検証
+    expect(Object.hasOwn(callArg.voice, "name")).toBe(false);
+  });
+
+  test("回帰防止: ja-JP の voice.ssmlGender が 'NEUTRAL' であること", async () => {
+    // Arrange
+    delete process.env.ENABLE_TTS;
+    const mockClient = makeMockClient();
+
+    // Act
+    await synthesize("こんにちは", "ja-JP", mockClient as never);
+
+    // Assert
+    const callArg = mockClient.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { ssmlGender: string };
+    };
+    expect(callArg.voice.ssmlGender).toBe("NEUTRAL");
+  });
+
+  test("回帰防止: en-US の voice に name フィールドが存在しない（ttsVoiceName 未定義の言語）", async () => {
+    // Arrange
+    delete process.env.ENABLE_TTS;
+    const mockClient = makeMockClient();
+
+    // Act
+    await synthesize("Hello", "en-US", mockClient as never);
+
+    // Assert: name プロパティが undefined（フィールド自体が存在しない）こと
+    const callArg = mockClient.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { languageCode: string; ssmlGender: string; name?: string };
+    };
+    expect(callArg.voice.name).toBeUndefined();
+    expect(Object.hasOwn(callArg.voice, "name")).toBe(false);
+  });
+
+  test("回帰防止: en-US の voice.ssmlGender が 'NEUTRAL' であること", async () => {
+    // Arrange
+    delete process.env.ENABLE_TTS;
+    const mockClient = makeMockClient();
+
+    // Act
+    await synthesize("Hello", "en-US", mockClient as never);
+
+    // Assert
+    const callArg = mockClient.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { ssmlGender: string };
+    };
+    expect(callArg.voice.ssmlGender).toBe("NEUTRAL");
+  });
+
+  // ── zh-CN と zh-TW で languageCode が異なること ────────────────────────────
+  test("zh-CN と zh-TW で voice.languageCode が異なる（'cmn-CN' ≠ 'cmn-TW'）", async () => {
+    // Arrange
+    delete process.env.ENABLE_TTS;
+    const mockClientCN = makeMockClient();
+    const mockClientTW = makeMockClient();
+
+    // Act
+    await synthesize("你好", "zh-CN", mockClientCN as never);
+    await synthesize("你好", "zh-TW", mockClientTW as never);
+
+    // Assert
+    const voiceCN = (mockClientCN.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { languageCode: string };
+    }).voice;
+    const voiceTW = (mockClientTW.synthesizeSpeech.mock.calls[0][0] as {
+      voice: { languageCode: string };
+    }).voice;
+    expect(voiceCN.languageCode).toBe("cmn-CN");
+    expect(voiceTW.languageCode).toBe("cmn-TW");
+    expect(voiceCN.languageCode).not.toBe(voiceTW.languageCode);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. getTtsClient() / setTtsClient() / resetTtsClient() — シングルトン制御
 // ---------------------------------------------------------------------------
 describe("setTtsClient() / getTtsClient() / resetTtsClient() — シングルトン制御", () => {
   test("setTtsClient() で差し替えたクライアントが getTtsClient() で取得できる", () => {

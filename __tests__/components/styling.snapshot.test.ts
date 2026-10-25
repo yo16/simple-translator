@@ -201,7 +201,9 @@ describe("LanguageSelector スナップショット", () => {
         sourceLanguage: "ja-JP",
         targetLanguage: "en-US",
         status: "idle",
-        onToggle: jest.fn(),
+        onSourceChange: jest.fn(),
+        onTargetChange: jest.fn(),
+        onSwap: jest.fn(),
       })
     );
     expect(asFragment()).toMatchSnapshot();
@@ -213,7 +215,9 @@ describe("LanguageSelector スナップショット", () => {
         sourceLanguage: "ja-JP",
         targetLanguage: "en-US",
         status: "recording",
-        onToggle: jest.fn(),
+        onSourceChange: jest.fn(),
+        onTargetChange: jest.fn(),
+        onSwap: jest.fn(),
       })
     );
     expect(asFragment()).toMatchSnapshot();

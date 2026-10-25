@@ -28,7 +28,7 @@
 - 低遅延化より、自然に意味が通る翻訳を優先する（要件 §4）。
 - ローカル環境専用。デプロイ・DB・認証・履歴永続化はしない（要件 §4/§7）。
 - 使用 GCP は3つに限定: Speech-to-Text / Translation / Text-to-Speech。Media Translation API は不使用（要件 §5）。
-- 対応言語は MVP で日本語・英語のみ（ja-JP⇄en-US、要件 §11.2）。
+- 対応言語は多言語対応（段階導入）。第1陣 = 日本語 / 英語 / 中国語(簡体) / 中国語(繁体) / 韓国語、第2陣 = 仏 / 西 / 独 / 葡(ブラジル) / タイ / フィリピン / ベトナム / マレーの全13言語（要件 §11.2）。言語はレジストリ駆動でデータ追加のみで拡張する。
 - 画面は1ページ（要件 §11）。
 
 ### 対象外（実装しない）
@@ -73,7 +73,10 @@ Next.js の Route Handler では完結させず独立 WebSocketサーバーに�
 |---|---|---|
 | 音声形式 | WebM/Opus（48kHz）。STT へ `encoding: WEBM_OPUS`。MVPで PCM変換しない | [gcp-integration.md](./gcp-integration.md#音声形式) |
 | STTストリーム | **セッション中切り直さない**（WebM/Opusのヘッダは最初のチャンクのみ）。発話区切りの「確定」はサーバー内の発話バッファを論理的に確定・クリアする操作 | [gcp-integration.md](./gcp-integration.md#stt-ストリーム維持) / [server-design.md](./server-design.md#発話バッファと発話区切り判定) |
-| Translation | MVP（ja⇄en）は v2 (Basic) を採用。将来 v3 移行余地あり | [gcp-integration.md](./gcp-integration.md#cloud-translationv2-basic) |
+| Translation | v2 (Basic) を採用。将来 v3 移行余地あり | [gcp-integration.md](./gcp-integration.md#cloud-translationv2-basic) |
+| 多言語レジストリ | **1エントリ＝1言語で各API（STT/Translation/TTS）の言語コードを一元管理する共有 `languages.ts`**。STT は script subtag（`cmn-Hans-CN` 等）、Translation は `zh-CN`/`zh-TW` を区別（`split("-")[0]` 廃止）。全13言語を段階導入 | [gcp-integration.md](./gcp-integration.md#言語レジストリ多言語対応の基盤) |
+| TTSボイス | ボイス名は時期で変動するため**実装時に `listVoices()` で実在検証**（Neural2 > WaveNet > Standard、無ければフォールバック＋ログ） | [gcp-integration.md](./gcp-integration.md#ttsボイス名の検証方針重要な前提) |
+| 言語別TTS | ターゲット言語別の TTS ON/OFF。**クライアントが `targetLanguage` から boolean へ解決**して `start.enableTts` で送る（プロトコル不変・サーバー改修最小） | [frontend-design.md](./frontend-design.md#言語別-tts) |
 | 発話区切り初期値 | 無音1.0秒 / 確定80文字 / 同一発話10秒 / 手動commit / stop（設定で変更可） | [server-design.md](./server-design.md#発話区切り判定) |
 | interim | 表示のみ。翻訳しない（既定 `enableInterimTranslation=false`、interim 翻訳は未実装）。TTSは確定発話のみ | [server-design.md](./server-design.md#音声認識要件-152) |
 | TTS出力 | MP3（`audio/mpeg`）。クライアントは `decodeAudioData` で FIFO 再生 | [frontend-design.md](./frontend-design.md#音声再生) |

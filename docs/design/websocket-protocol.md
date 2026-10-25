@@ -67,9 +67,9 @@
 | フィールド | 型 | 必須 | 説明 |
 |---|---|---|---|
 | `type` | `"start"` | ○ | 固定 |
-| `sourceLanguage` | `"ja-JP" \| "en-US"` | ○ | 入力言語（MVPは2値のみ） |
-| `targetLanguage` | `"ja-JP" \| "en-US"` | ○ | 出力言語（sourceと異なること） |
-| `enableTts` | `boolean` | ○ | TTS有効/無効 |
+| `sourceLanguage` | `LanguageEnum` | ○ | 入力言語（全13言語・段階導入。集合はレジストリと一致） |
+| `targetLanguage` | `LanguageEnum` | ○ | 出力言語（sourceと異なること） |
+| `enableTts` | `boolean` | ○ | TTS有効/無効。**クライアントが `targetLanguage` 別設定（`ttsByLanguage`）を boolean へ解決して送る**（言語別TTSはクライアント側で完結、プロトコルは boolean のまま不変。[frontend-design.md](./frontend-design.md#言語別-tts) 参照） |
 | `enableInterimTranslation` | `boolean` | △ | 省略時 false。interim 仮翻訳モード（初期OFF）。クライアントは常に送信するが、サーバーschemaでは optional（省略時 false）。なお実装ではサーバーは interim 翻訳経路を持たず、本フラグは予約扱い（bd-simple-translator-mgk、[server-design.md](./server-design.md#翻訳要件-154) 参照） |
 | `chunkMs` | `number` | ○ | 音声チャンク間隔(ms)。既定250（bd-simple-translator-mgk） |
 | `silenceMs` | `number` | ○ | 無音区切り判定(ms)。既定1000 |
@@ -218,7 +218,13 @@ STT の final result。発話バッファへ追加される単位。
 // server/schema.ts （設計例。実装時の指針）
 import { z } from "zod";
 
-const LanguageEnum = z.enum(["ja-JP", "en-US"]);
+// 全13言語（段階導入）。集合は languages.ts のレジストリと一致させる
+// （[gcp-integration.md](./gcp-integration.md#言語レジストリ多言語対応の基盤) 参照）。
+// 第1陣: ja-JP, en-US, zh-CN, zh-TW, ko-KR / 第2陣: fr-FR, es-ES, de-DE, pt-BR, th-TH, fil-PH, vi-VN, ms-MY
+const LanguageEnum = z.enum([
+  "ja-JP", "en-US", "zh-CN", "zh-TW", "ko-KR",
+  "fr-FR", "es-ES", "de-DE", "pt-BR", "th-TH", "fil-PH", "vi-VN", "ms-MY",
+]);
 
 export const startSchema = z.object({
   type: z.literal("start"),

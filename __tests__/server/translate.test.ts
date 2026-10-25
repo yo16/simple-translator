@@ -2,13 +2,15 @@
  * server/translate.ts の単体テスト
  *
  * Cloud Translation v2 クライアントはモックで差し替え、GCP への実通信は行わない。
- * translate()、toTranslationLangCode()、getTranslateClient() / setTranslateClient() /
+ * translate()、getTranslateClient() / setTranslateClient() /
  * resetTranslateClient() を検証する。
+ *
+ * Note: toTranslationLangCode() は c2n.3 で削除された。
+ *   同等の検証（zh-CN/zh-TW 含む）は languages.test.ts の translationCodeOf で網羅済み。
  */
 
 import {
   translate,
-  toTranslationLangCode,
   getTranslateClient,
   setTranslateClient,
   resetTranslateClient,
@@ -152,6 +154,67 @@ describe("translate() — 言語コード変換", () => {
     expect(callArg.from).not.toContain("-");
     expect(callArg.to).not.toContain("-");
   });
+
+  test("zh-CN→en-US 指定のとき、モッククライアントに { from: 'zh-CN', to: 'en' } で渡る", async () => {
+    // Arrange
+    const mockClient = makeMockClient(["Hello", {}]);
+
+    // Act
+    await translate("你好", "zh-CN", "en-US", mockClient as never);
+
+    // Assert: zh-CN は translationCodeOf で "zh-CN" になる（split では "zh" に潰れる問題を回避）
+    expect(mockClient.translate).toHaveBeenCalledWith("你好", { from: "zh-CN", to: "en" });
+  });
+
+  test("en-US→zh-TW 指定のとき、モッククライアントに { from: 'en', to: 'zh-TW' } で渡る", async () => {
+    // Arrange
+    const mockClient = makeMockClient(["你好", {}]);
+
+    // Act
+    await translate("Hello", "en-US", "zh-TW", mockClient as never);
+
+    // Assert: zh-TW は translationCodeOf で "zh-TW" になる
+    expect(mockClient.translate).toHaveBeenCalledWith("Hello", { from: "en", to: "zh-TW" });
+  });
+
+  test("zh-CN と zh-TW では to が異なること（'zh-CN' ≠ 'zh-TW'）— split方式なら両方 'zh' に潰れる問題が回避されている", async () => {
+    // Arrange
+    const mockClientCN = makeMockClient(["Hello CN", {}]);
+    const mockClientTW = makeMockClient(["Hello TW", {}]);
+
+    // Act: zh-CN と zh-TW それぞれで翻訳
+    await translate("你好", "en-US", "zh-CN", mockClientCN as never);
+    await translate("你好", "en-US", "zh-TW", mockClientTW as never);
+
+    // Assert: to が "zh-CN" と "zh-TW" で別の値になっていること（どちらも "zh" に潰れていない）
+    const callArgCN = mockClientCN.translate.mock.calls[0][1] as { from: string; to: string };
+    const callArgTW = mockClientTW.translate.mock.calls[0][1] as { from: string; to: string };
+    expect(callArgCN.to).toBe("zh-CN");
+    expect(callArgTW.to).toBe("zh-TW");
+    expect(callArgCN.to).not.toBe(callArgTW.to);
+  });
+
+  test("ja-JP→zh-CN 指定のとき、モッククライアントに { from: 'ja', to: 'zh-CN' } で渡る", async () => {
+    // Arrange
+    const mockClient = makeMockClient(["你好", {}]);
+
+    // Act
+    await translate("こんにちは", "ja-JP", "zh-CN", mockClient as never);
+
+    // Assert
+    expect(mockClient.translate).toHaveBeenCalledWith("こんにちは", { from: "ja", to: "zh-CN" });
+  });
+
+  test("ko-KR→en-US 指定のとき、モッククライアントに { from: 'ko', to: 'en' } で渡る", async () => {
+    // Arrange
+    const mockClient = makeMockClient(["Hello", {}]);
+
+    // Act
+    await translate("안녕하세요", "ko-KR", "en-US", mockClient as never);
+
+    // Assert
+    expect(mockClient.translate).toHaveBeenCalledWith("안녕하세요", { from: "ko", to: "en" });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -234,53 +297,7 @@ describe("translate() — エラー伝播", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. toTranslationLangCode() — 言語コード変換の単体検証
-// ---------------------------------------------------------------------------
-describe("toTranslationLangCode() — 単体検証", () => {
-  test("'ja-JP' → 'ja' に変換される", () => {
-    // Act & Assert
-    expect(toTranslationLangCode("ja-JP")).toBe("ja");
-  });
-
-  test("'en-US' → 'en' に変換される", () => {
-    // Act & Assert
-    expect(toTranslationLangCode("en-US")).toBe("en");
-  });
-
-  test("'ja'（既に2文字コード）はそのまま 'ja' が返る（冪等性）", () => {
-    // Act & Assert
-    expect(toTranslationLangCode("ja")).toBe("ja");
-  });
-
-  test("'en'（既に2文字コード）はそのまま 'en' が返る（冪等性）", () => {
-    // Act & Assert
-    expect(toTranslationLangCode("en")).toBe("en");
-  });
-
-  test("想定外の形式 'zh-CN' でも先頭部分 'zh' が返る", () => {
-    // Act & Assert
-    expect(toTranslationLangCode("zh-CN")).toBe("zh");
-  });
-
-  test("想定外の形式 'fr-FR' でも先頭部分 'fr' が返る", () => {
-    // Act & Assert
-    expect(toTranslationLangCode("fr-FR")).toBe("fr");
-  });
-
-  test("'-' を含まない単純文字列はそのまま返る", () => {
-    // Act & Assert
-    expect(toTranslationLangCode("xyz")).toBe("xyz");
-  });
-
-  test("複数のハイフンがある場合も最初の '-' より前の部分だけが返る", () => {
-    // Arrange: e.g., "zh-Hans-CN" のような形式
-    // Act & Assert
-    expect(toTranslationLangCode("zh-Hans-CN")).toBe("zh");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 7. setTranslateClient() / getTranslateClient() / resetTranslateClient() — シングルトン制御
+// 6. setTranslateClient() / getTranslateClient() / resetTranslateClient() — シングルトン制御
 // ---------------------------------------------------------------------------
 describe("setTranslateClient() / getTranslateClient() / resetTranslateClient() — シングルトン制御", () => {
   test("setTranslateClient() で差し替えたクライアントが getTranslateClient() で取得できる", () => {

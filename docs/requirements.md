@@ -261,15 +261,35 @@ MVPでは厳密な秒数保証は不要とする。
 
 ## 11.2 対応言語
 
-MVPでは以下のみ対応する。
+多言語対応を段階導入する。1エントリ＝1言語で各GCP API（Speech-to-Text / Translation / Text-to-Speech）の言語コードを一元管理する言語レジストリ（`languages.ts`）を設け、言語の追加はレジストリへのデータ追加のみで行えるようにする（設計詳細は `docs/design/gcp-integration.md` の「言語レジストリ」を参照）。
 
-* 日本語
-* 英語
+対応言語は全13言語とする。
 
-言語ペアは以下。
+第1陣（先行実装・テスト対象）:
 
-* 日本語 → 英語
-* 英語 → 日本語
+* 日本語（ja-JP）
+* 英語（en-US）
+* 中国語（簡体, zh-CN）
+* 中国語（繁体, zh-TW）
+* 韓国語（ko-KR）
+
+第2陣（後続）:
+
+* フランス語（fr-FR）
+* スペイン語（es-ES）
+* ドイツ語（de-DE）
+* ポルトガル語（ブラジル, pt-BR）
+* タイ語（th-TH）
+* フィリピン語（fil-PH）
+* ベトナム語（vi-VN）
+* マレー語（ms-MY）
+
+言語ペアは、source と target が異なる任意の組み合わせを許可する（同一言語の選択は不可）。
+
+備考:
+
+* Speech-to-Text の中国語は script subtag 付きコード（簡体 `cmn-Hans-CN` / 繁体 `cmn-Hant-TW`）を使う。Translation では `zh-CN` / `zh-TW` を区別する。
+* Text-to-Speech のボイス名は提供状況が時期により変動するため、実装時に `listVoices()` で実在を検証し、優先度 Neural2 > WaveNet > Standard でフォールバックする。
 
 ## 12. 音声入力仕様
 
@@ -389,6 +409,10 @@ ws://localhost:3001/ws
   "maxSeconds": 10
 }
 ```
+
+`sourceLanguage` / `targetLanguage` は §11.2 の全13言語（段階導入）に対応する言語コードを取り得る（source ≠ target）。
+
+`enableTts` は boolean のまま不変だが、**音声出力（TTS）はターゲット言語ごとに ON/OFF を切り替えられる**。クライアントは設定としてターゲット言語別の TTS 設定（`ttsByLanguage`）を保持し、`start` 送信時に現在の `targetLanguage` に対する値を boolean へ解決して `enableTts` に入れて送る。言語別 TTS の解決はクライアント側で完結し、WebSocketプロトコルおよびサーバー処理は boolean の `enableTts` のみを参照する（設計詳細は `docs/design/frontend-design.md` の「言語別 TTS」を参照）。
 
 ### 音声チャンク
 
