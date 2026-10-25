@@ -148,3 +148,7 @@ tmp/
 .claude/settings.local.json
 .claude/agent-memory/
 .claude/worktrees/
+
+# bd (beads) 1.3.2 runtime files
+*.gate.lock*
+.beads-credential-key
